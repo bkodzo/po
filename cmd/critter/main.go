@@ -10,13 +10,14 @@ import (
 	"github.com/bkodzo/critter/internal/mood"
 	"github.com/bkodzo/critter/internal/pet"
 	"github.com/bkodzo/critter/internal/theme"
+	"github.com/bkodzo/critter/internal/ui"
 )
 
 func main() {
 	args := os.Args[1:]
-	compare := len(args) > 0 && args[0] == "compare"
-	if compare {
-		args = args[1:]
+	sub := ""
+	if len(args) > 0 && (args[0] == "compare" || args[0] == "eval" || args[0] == "gallery") {
+		sub, args = args[0], args[1:]
 	}
 
 	fs := flag.NewFlagSet("critter", flag.ExitOnError)
@@ -24,6 +25,8 @@ func main() {
 	readerName := fs.String("reader", "auto", "mood reader: auto, decision, ollama or keyword")
 	url := fs.String("url", "", "address of the decision server or ollama")
 	model := fs.String("model", "", "model name for the chosen reader")
+	letters := fs.Bool("letters", false, "gallery: print plain letters instead of colour")
+	data := fs.String("data", "testdata/lines.tsv", "labelled lines for eval")
 	fs.Parse(args)
 
 	keyword := mood.Keyword{}
@@ -34,15 +37,27 @@ func main() {
 		remote = mood.NewDecision(*url, *model)
 	}
 
-	if compare {
-		runCompare(keyword, remote)
-		return
-	}
-
 	th, ok := theme.Get(*themeName)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "unknown theme %q\n", *themeName)
 		os.Exit(1)
+	}
+
+	switch sub {
+	case "compare":
+		runCompare(keyword, remote)
+		return
+	case "gallery":
+		gallery(th, *letters)
+		return
+	case "eval":
+		readers := map[string]mood.Reader{"keyword": keyword, *readerName: remote}
+		order := []string{"keyword", *readerName}
+		if err := runEval(*data, readers, order); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	var reader mood.Reader
@@ -59,7 +74,17 @@ func main() {
 	}
 
 	p := pet.Load()
-	show(th, p, "")
+	if *readerName != "keyword" {
+		p.MinConfidence = 0.25
+	}
+
+	if isTerminal(os.Stdin) {
+		if err := ui.Run(th, p, reader); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -70,7 +95,7 @@ func main() {
 		} else {
 			line = th.Confused()
 		}
-		show(th, p, line)
+		show(p, line)
 		if err := p.Save(); err != nil {
 			fmt.Fprintln(os.Stderr, "could not save state:", err)
 		}
@@ -99,9 +124,25 @@ func describe(r mood.Reader, e mood.Event) string {
 	return fmt.Sprintf("%s %.2f", m, c)
 }
 
-func show(th theme.Theme, p *pet.Pet, line string) {
-	fmt.Printf("\n%s\n", th.Art[p.Mood])
-	if line != "" {
-		fmt.Printf("  \"%s\"\n", line)
+func show(p *pet.Pet, line string) {
+	fmt.Printf("[%s] %s\n", p.Mood, line)
+}
+
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// gallery prints one representative frame for every mood.
+func gallery(th theme.Theme, letters bool) {
+	ticks := map[mood.Mood]int{mood.Celebrating: 3, mood.Frustrated: 1, mood.Tired: 9}
+	for _, m := range mood.All {
+		canvas, pal := th.Frame(m, ticks[m])
+		fmt.Printf("\n%s\n", m)
+		if letters {
+			fmt.Println(canvas.Letters())
+		} else {
+			fmt.Println(canvas.Render(pal))
+		}
 	}
 }

@@ -4,11 +4,14 @@ import (
 	"math/rand"
 
 	"github.com/bkodzo/critter/internal/mood"
+	"github.com/bkodzo/critter/internal/sprite"
 )
 
 type Theme struct {
-	Name   string
-	Art    map[mood.Mood]string
+	Name    string
+	Palette sprite.Palette
+	// Tints shift the creature's body colour toward a mood colour.
+	Tints  map[mood.Mood]sprite.Color
 	Lines  map[mood.Mood][]string
 	Unsure []string
 }
