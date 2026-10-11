@@ -2,8 +2,10 @@ package pet
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/bkodzo/po/internal/mood"
 )
@@ -11,6 +13,12 @@ import (
 const (
 	decay            = 0.6
 	DefaultThreshold = 0.45
+
+	// halfLife is how long it takes a mood to fade to half strength when
+	// nothing is happening, and floor is the strength below which the pet is
+	// simply calm.
+	halfLife = 90 * time.Second
+	floor    = 0.15
 )
 
 type Pet struct {
@@ -20,6 +28,10 @@ type Pet struct {
 	// MinConfidence is how sure a reading must be to count. Readers differ in
 	// how peaked their scores are, so the caller sets it per reader.
 	MinConfidence float64 `json:"-"`
+
+	// Updated is when the state was last saved, so a mood can fade while Po
+	// isn't running.
+	Updated time.Time `json:"updated"`
 }
 
 func New() *Pet {
@@ -37,14 +49,31 @@ func (p *Pet) Apply(r mood.Reading) bool {
 		p.Momentum[m] *= decay
 	}
 	p.Momentum[top] += conf
-	best, score := p.Mood, p.Momentum[p.Mood]
+	p.settle()
+	return true
+}
+
+// settle picks the strongest mood, or calm if none is strong enough.
+func (p *Pet) settle() {
+	best, score := mood.Calm, floor
 	for _, m := range mood.All {
 		if p.Momentum[m] > score {
 			best, score = m, p.Momentum[m]
 		}
 	}
 	p.Mood = best
-	return true
+}
+
+// Decay fades every mood as time passes, so a bad run doesn't last forever.
+func (p *Pet) Decay(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	f := math.Pow(0.5, d.Seconds()/halfLife.Seconds())
+	for m := range p.Momentum {
+		p.Momentum[m] *= f
+	}
+	p.settle()
 }
 
 func statePath() (string, error) {
@@ -69,6 +98,9 @@ func Load() *Pet {
 		return New()
 	}
 	p.MinConfidence = DefaultThreshold
+	if !p.Updated.IsZero() {
+		p.Decay(time.Since(p.Updated))
+	}
 	return p
 }
 
@@ -80,6 +112,7 @@ func (p *Pet) Save() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	p.Updated = time.Now()
 	data, err := json.Marshal(p)
 	if err != nil {
 		return err

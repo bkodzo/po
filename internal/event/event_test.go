@@ -59,3 +59,21 @@ func TestToEvent(t *testing.T) {
 		t.Errorf("long command not truncated: %d runes", len([]rune(long.Text)))
 	}
 }
+
+func TestIgnoreKeepsFailuresOfBoringCommands(t *testing.T) {
+	for _, tc := range []struct {
+		c    Command
+		want bool
+	}{
+		{Command{Text: "cd ah", Exit: 1}, false},
+		{Command{Text: "ls /nope", Exit: 2}, false},
+		{Command{Text: "cd ..", Exit: 0}, true},
+		{Command{Text: "ls", Exit: 0}, true},
+		{Command{Text: " cd secret", Exit: 1}, true},
+		{Command{Text: "go test ./...", Exit: 0}, false},
+	} {
+		if got := tc.c.Ignore(); got != tc.want {
+			t.Errorf("Ignore(%+v) = %v, want %v", tc.c, got, tc.want)
+		}
+	}
+}

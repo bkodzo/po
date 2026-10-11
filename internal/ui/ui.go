@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
@@ -127,7 +126,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reqMsg:
 		req := ipc.Request(msg)
 		req.Ack()
-		if req.Cmd == nil || event.Skip(req.Cmd.Text) {
+		if req.Cmd == nil || req.Cmd.Ignore() {
 			return m, waitForEvent(m.events)
 		}
 		m, cmd := m.enqueue(req.Cmd.ToEvent())

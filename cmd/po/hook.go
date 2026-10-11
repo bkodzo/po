@@ -66,8 +66,10 @@ func runNotify(args []string) {
 	}
 
 	msg := ipc.Message{TTY: *tty}
-	if text := strings.TrimSpace(strings.Join(fs.Args(), " ")); text != "" && !event.Skip(text) {
-		msg.Cmd = &event.Command{Text: text, Exit: *status, Millis: *ms}
+	if text := strings.TrimSpace(strings.Join(fs.Args(), " ")); text != "" {
+		if c := (event.Command{Text: text, Exit: *status, Millis: *ms}); !c.Ignore() {
+			msg.Cmd = &c
+		}
 	}
 	if msg.Cmd == nil && msg.TTY == "" {
 		return

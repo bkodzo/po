@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/overlay"
@@ -19,6 +18,9 @@ const (
 	// oldest are dropped, so a burst of commands never leaves the pet reacting
 	// to old news.
 	maxQueued = 3
+	// flashFor is how long the creature shows its reaction to the latest
+	// command before going back to its longer-term mood.
+	flashFor = 3 * time.Second
 )
 
 // Daemon runs the pet with no window of its own. It draws a two-row creature
@@ -27,8 +29,10 @@ type Daemon struct {
 	th     theme.Theme
 	reader mood.Reader
 
-	mu  sync.Mutex // guards pet
-	pet *pet.Pet
+	mu         sync.Mutex // guards pet and flash
+	pet        *pet.Pet
+	flash      mood.Mood
+	flashUntil time.Time
 
 	tick    int
 	targets map[string]*overlay.Target
@@ -71,7 +75,7 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 		d.hide(req.TTY)
 		return false
 	}
-	if req.Cmd != nil && !event.Skip(req.Cmd.Text) {
+	if req.Cmd != nil && !req.Cmd.Ignore() {
 		d.submit(req.Cmd.ToEvent())
 	}
 	if req.TTY != "" {
@@ -102,6 +106,9 @@ func (d *Daemon) worker() {
 		reading, err := d.reader.Read(e)
 		d.mu.Lock()
 		if err == nil {
+			if top, conf := reading.Top(); conf >= d.pet.MinConfidence {
+				d.flash, d.flashUntil = top, time.Now().Add(flashFor)
+			}
 			d.pet.Apply(reading)
 		}
 		_ = d.pet.Save()
@@ -129,6 +136,9 @@ func (d *Daemon) hide(tty string) {
 
 func (d *Daemon) redraw() {
 	d.tick++
+	d.mu.Lock()
+	d.pet.Decay(tickEvery)
+	d.mu.Unlock()
 	for tty := range d.targets {
 		d.draw(tty)
 	}
@@ -137,6 +147,9 @@ func (d *Daemon) redraw() {
 func (d *Daemon) draw(tty string) {
 	d.mu.Lock()
 	m := d.pet.Mood
+	if time.Now().Before(d.flashUntil) {
+		m = d.flash
+	}
 	d.mu.Unlock()
 
 	canvas, pal := d.th.MiniFrame(m, d.tick)
