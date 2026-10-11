@@ -3,8 +3,8 @@ package theme
 import (
 	"math/rand"
 
-	"github.com/bkodzo/critter/internal/mood"
-	"github.com/bkodzo/critter/internal/sprite"
+	"github.com/bkodzo/po/internal/mood"
+	"github.com/bkodzo/po/internal/sprite"
 )
 
 type Theme struct {

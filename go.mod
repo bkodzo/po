@@ -1,4 +1,4 @@
-module github.com/bkodzo/critter
+module github.com/bkodzo/po
 
 go 1.27.1
 

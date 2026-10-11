@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bkodzo/critter/internal/mood"
-	"github.com/bkodzo/critter/internal/sprite"
+	"github.com/bkodzo/po/internal/mood"
+	"github.com/bkodzo/po/internal/sprite"
 )
 
 func TestEveryMoodDrawsEveryFrame(t *testing.T) {

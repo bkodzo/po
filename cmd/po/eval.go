@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bkodzo/critter/internal/mood"
+	"github.com/bkodzo/po/internal/mood"
 )
 
 type labelled struct {

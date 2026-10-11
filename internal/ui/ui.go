@@ -8,9 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/bkodzo/critter/internal/mood"
-	"github.com/bkodzo/critter/internal/pet"
-	"github.com/bkodzo/critter/internal/theme"
+	"github.com/bkodzo/po/internal/mood"
+	"github.com/bkodzo/po/internal/pet"
+	"github.com/bkodzo/po/internal/theme"
 )
 
 type tickMsg time.Time

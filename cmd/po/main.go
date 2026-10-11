@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/bkodzo/critter/internal/mood"
-	"github.com/bkodzo/critter/internal/pet"
-	"github.com/bkodzo/critter/internal/theme"
-	"github.com/bkodzo/critter/internal/ui"
+	"github.com/bkodzo/po/internal/mood"
+	"github.com/bkodzo/po/internal/pet"
+	"github.com/bkodzo/po/internal/theme"
+	"github.com/bkodzo/po/internal/ui"
 )
 
 func main() {
@@ -20,7 +20,7 @@ func main() {
 		sub, args = args[0], args[1:]
 	}
 
-	fs := flag.NewFlagSet("critter", flag.ExitOnError)
+	fs := flag.NewFlagSet("po", flag.ExitOnError)
 	themeName := fs.String("theme", "soccer", "pet theme")
 	readerName := fs.String("reader", "auto", "mood reader: auto, decision, ollama or keyword")
 	url := fs.String("url", "", "address of the decision server or ollama")

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bkodzo/critter/internal/mood"
+	"github.com/bkodzo/po/internal/mood"
 )
 
 const (
@@ -52,7 +52,7 @@ func statePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "critter", "state.json"), nil
+	return filepath.Join(dir, "po", "state.json"), nil
 }
 
 func Load() *Pet {

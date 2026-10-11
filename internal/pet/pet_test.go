@@ -3,7 +3,7 @@ package pet
 import (
 	"testing"
 
-	"github.com/bkodzo/critter/internal/mood"
+	"github.com/bkodzo/po/internal/mood"
 )
 
 func reading(m mood.Mood, conf float64) mood.Reading {

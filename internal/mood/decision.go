@@ -28,7 +28,7 @@ func NewDecision(url, model string) *Decision {
 	return &Decision{
 		URL:    url,
 		Model:  model,
-		Key:    os.Getenv("CRITTER_API_KEY"),
+		Key:    os.Getenv("PO_API_KEY"),
 		Client: &http.Client{Timeout: 20 * time.Second},
 	}
 }

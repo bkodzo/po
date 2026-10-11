@@ -1,8 +1,8 @@
 package theme
 
 import (
-	"github.com/bkodzo/critter/internal/mood"
-	"github.com/bkodzo/critter/internal/sprite"
+	"github.com/bkodzo/po/internal/mood"
+	"github.com/bkodzo/po/internal/sprite"
 )
 
 const (
