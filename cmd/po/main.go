@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
 	"github.com/bkodzo/po/internal/theme"
@@ -15,6 +16,14 @@ import (
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "notify" {
+		runNotify(args[1:])
+		return
+	}
+	if len(args) > 0 && args[0] == "hook" {
+		runHook(args[1:])
+		return
+	}
 	sub := ""
 	if len(args) > 0 && (args[0] == "compare" || args[0] == "eval" || args[0] == "gallery") {
 		sub, args = args[0], args[1:]
@@ -79,7 +88,13 @@ func main() {
 	}
 
 	if isTerminal(os.Stdin) {
-		if err := ui.Run(th, p, reader); err != nil {
+		listener, err := ipc.Listen()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "po:", err)
+			os.Exit(1)
+		}
+		defer listener.Close()
+		if err := ui.Run(th, p, reader, listener.C); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

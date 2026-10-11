@@ -8,12 +8,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
 	"github.com/bkodzo/po/internal/theme"
 )
 
 type tickMsg time.Time
+
+type cmdMsg event.Command
 
 type readMsg struct {
 	reading mood.Reading
@@ -29,7 +32,8 @@ type Model struct {
 	input   string
 	line    string
 	shown   int
-	queue   []string
+	queue   []mood.Event
+	events  <-chan event.Command
 	busy    bool
 	width   int
 	height  int
@@ -37,23 +41,54 @@ type Model struct {
 	quit    bool
 }
 
-func Run(th theme.Theme, p *pet.Pet, r mood.Reader) error {
-	_, err := tea.NewProgram(Model{th: th, pet: p, reader: r}).Run()
+// maxQueued bounds how many events wait for the reader. Past this, the oldest
+// are dropped, so a burst of commands never leaves the pet reacting to old news.
+const maxQueued = 3
+
+// Run shows the pet. Events from shell hooks arrive on events, which may be nil.
+func Run(th theme.Theme, p *pet.Pet, r mood.Reader, events <-chan event.Command) error {
+	_, err := tea.NewProgram(Model{th: th, pet: p, reader: r, events: events}).Run()
 	return err
+}
+
+func waitForEvent(ch <-chan event.Command) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		c, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return cmdMsg(c)
+	}
 }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second/theme.Fps, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func (m Model) Init() tea.Cmd { return tickCmd() }
+func (m Model) Init() tea.Cmd { return tea.Batch(tickCmd(), waitForEvent(m.events)) }
 
-func (m Model) read(text string) tea.Cmd {
+func (m Model) read(e mood.Event) tea.Cmd {
 	r := m.reader
 	return func() tea.Msg {
-		reading, err := r.Read(mood.Event{Kind: "text", Text: text})
+		reading, err := r.Read(e)
 		return readMsg{reading, err}
 	}
+}
+
+// enqueue starts reading an event now, or queues it behind the one in flight.
+func (m Model) enqueue(e mood.Event) (Model, tea.Cmd) {
+	if m.busy {
+		m.queue = append(m.queue, e)
+		if len(m.queue) > maxQueued {
+			m.queue = m.queue[len(m.queue)-maxQueued:]
+		}
+		return m, nil
+	}
+	m.busy = true
+	return m, m.read(e)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -88,6 +123,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.read(next)
 		}
 
+	case cmdMsg:
+		c := event.Command(msg)
+		if event.Skip(c.Text) {
+			return m, waitForEvent(m.events)
+		}
+		m, cmd := m.enqueue(c.ToEvent())
+		return m, tea.Batch(cmd, waitForEvent(m.events))
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
@@ -100,12 +143,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text == "" {
 				return m, nil
 			}
-			if m.busy {
-				m.queue = append(m.queue, text)
-				return m, nil
-			}
-			m.busy = true
-			return m, m.read(text)
+			return m.enqueue(mood.Event{Kind: "text", Text: text})
 		case tea.KeyBackspace:
 			if r := []rune(m.input); len(r) > 0 {
 				m.input = string(r[:len(r)-1])
