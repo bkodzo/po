@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/bkodzo/po/internal/event"
+	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
 	"github.com/bkodzo/po/internal/theme"
@@ -16,7 +17,7 @@ import (
 
 type tickMsg time.Time
 
-type cmdMsg event.Command
+type reqMsg ipc.Request
 
 type readMsg struct {
 	reading mood.Reading
@@ -33,7 +34,7 @@ type Model struct {
 	line    string
 	shown   int
 	queue   []mood.Event
-	events  <-chan event.Command
+	events  <-chan ipc.Request
 	busy    bool
 	width   int
 	height  int
@@ -46,21 +47,21 @@ type Model struct {
 const maxQueued = 3
 
 // Run shows the pet. Events from shell hooks arrive on events, which may be nil.
-func Run(th theme.Theme, p *pet.Pet, r mood.Reader, events <-chan event.Command) error {
+func Run(th theme.Theme, p *pet.Pet, r mood.Reader, events <-chan ipc.Request) error {
 	_, err := tea.NewProgram(Model{th: th, pet: p, reader: r, events: events}).Run()
 	return err
 }
 
-func waitForEvent(ch <-chan event.Command) tea.Cmd {
+func waitForEvent(ch <-chan ipc.Request) tea.Cmd {
 	if ch == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		c, ok := <-ch
+		req, ok := <-ch
 		if !ok {
 			return nil
 		}
-		return cmdMsg(c)
+		return reqMsg(req)
 	}
 }
 
@@ -123,12 +124,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.read(next)
 		}
 
-	case cmdMsg:
-		c := event.Command(msg)
-		if event.Skip(c.Text) {
+	case reqMsg:
+		req := ipc.Request(msg)
+		req.Ack()
+		if req.Cmd == nil || event.Skip(req.Cmd.Text) {
 			return m, waitForEvent(m.events)
 		}
-		m, cmd := m.enqueue(c.ToEvent())
+		m, cmd := m.enqueue(req.Cmd.ToEvent())
 		return m, tea.Batch(cmd, waitForEvent(m.events))
 
 	case tea.KeyMsg:

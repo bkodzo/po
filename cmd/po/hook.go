@@ -4,25 +4,38 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/ipc"
 )
 
-const zshHook = `# Po shell hook: tells Po how your commands went.
+const zshHook = `# Po shell hook: tells Po how your commands went and where to show up.
 zmodload zsh/datetime 2>/dev/null
 autoload -Uz add-zsh-hook
-_po_preexec() { _po_cmd=$1; _po_start=$EPOCHREALTIME }
+_po_preexec() {
+  _po_cmd=$1
+  _po_start=$EPOCHREALTIME
+  command po notify --hide --tty "$TTY" >/dev/null 2>&1
+}
 _po_precmd() {
   local code=$?
-  [[ -n $_po_cmd ]] || return
-  local ms=$(( (EPOCHREALTIME - _po_start) * 1000 ))
-  command po notify --status $code --ms ${ms%.*} -- "$_po_cmd" >/dev/null 2>&1 &!
+  local ms=0
+  if [[ -n $_po_cmd ]]; then
+    ms=$(( (EPOCHREALTIME - _po_start) * 1000 ))
+    command po notify --status $code --ms ${ms%.*} --tty "$TTY" -- "$_po_cmd" >/dev/null 2>&1 &!
+  else
+    command po notify --tty "$TTY" >/dev/null 2>&1 &!
+  fi
   _po_cmd=
 }
+_po_zshexit() { command po notify --hide --tty "$TTY" >/dev/null 2>&1 }
 add-zsh-hook preexec _po_preexec
 add-zsh-hook precmd _po_precmd
+add-zsh-hook zshexit _po_zshexit
 `
 
 func runHook(args []string) {
@@ -33,19 +46,63 @@ func runHook(args []string) {
 	fmt.Print(zshHook)
 }
 
-// runNotify reports one finished command to a running pet. It never prints and
-// always exits 0, so it can't disturb the shell it is called from.
+// runNotify reports to a running pet, starting one in the background if
+// needed. It never prints and always exits 0, so it can't disturb the shell it
+// is called from.
 func runNotify(args []string) {
 	fs := flag.NewFlagSet("notify", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	status := fs.Int("status", 0, "exit status of the command")
 	ms := fs.Int64("ms", 0, "how long it ran, in milliseconds")
+	tty := fs.String("tty", "", "terminal the shell is running in")
+	hide := fs.Bool("hide", false, "hide the pet in that terminal")
 	if fs.Parse(args) != nil {
 		return
 	}
-	text := strings.TrimSpace(strings.Join(fs.Args(), " "))
-	if event.Skip(text) {
+
+	if *hide {
+		_ = ipc.Send(ipc.Message{Op: "hide", TTY: *tty})
 		return
 	}
-	_ = ipc.Send(event.Command{Text: text, Exit: *status, Millis: *ms})
+
+	msg := ipc.Message{TTY: *tty}
+	if text := strings.TrimSpace(strings.Join(fs.Args(), " ")); text != "" && !event.Skip(text) {
+		msg.Cmd = &event.Command{Text: text, Exit: *status, Millis: *ms}
+	}
+	if msg.Cmd == nil && msg.TTY == "" {
+		return
+	}
+	if ipc.Send(msg) == nil {
+		return
+	}
+	if os.Getenv("PO_NO_AUTOSTART") != "" || *tty == "" || startDaemon() != nil {
+		return
+	}
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if ipc.Send(msg) == nil {
+			return
+		}
+	}
+}
+
+// startDaemon launches the background pet, detached from this shell.
+func startDaemon() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe, "daemon")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
+func runStop() {
+	if err := ipc.Send(ipc.Message{Op: "stop"}); err != nil {
+		fmt.Println("po is not running")
+		return
+	}
+	fmt.Println("po stopped")
 }

@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/bkodzo/po/internal/daemon"
 	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
@@ -24,8 +26,12 @@ func main() {
 		runHook(args[1:])
 		return
 	}
+	if len(args) > 0 && args[0] == "stop" {
+		runStop()
+		return
+	}
 	sub := ""
-	if len(args) > 0 && (args[0] == "compare" || args[0] == "eval" || args[0] == "gallery") {
+	if len(args) > 0 && (args[0] == "compare" || args[0] == "eval" || args[0] == "gallery" || args[0] == "daemon") {
 		sub, args = args[0], args[1:]
 	}
 
@@ -87,8 +93,22 @@ func main() {
 		p.MinConfidence = 0.25
 	}
 
+	if sub == "daemon" {
+		listener, err := ipc.Listen()
+		if err != nil {
+			os.Exit(1)
+		}
+		defer listener.Close()
+		daemon.Run(th, p, reader, listener)
+		return
+	}
+
 	if isTerminal(os.Stdin) {
 		listener, err := ipc.Listen()
+		if errors.Is(err, ipc.ErrRunning) {
+			fmt.Fprintln(os.Stderr, "po: a pet is already running (run `po stop` to close it, then try again)")
+			os.Exit(1)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "po:", err)
 			os.Exit(1)

@@ -12,6 +12,26 @@ import (
 	"github.com/bkodzo/po/internal/event"
 )
 
+// Message is what a shell hook tells the pet. Op is "cmd" (the default), "show",
+// "hide" or "stop". A message with a TTY and no Op also means the shell is
+// waiting at a prompt on that terminal.
+type Message struct {
+	Op  string         `json:"op,omitempty"`
+	TTY string         `json:"tty,omitempty"`
+	Cmd *event.Command `json:"cmd,omitempty"`
+}
+
+// Request is a received message. Ack tells the sender it has been handled.
+type Request struct {
+	Message
+	conn net.Conn
+}
+
+func (r Request) Ack() {
+	r.conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
+	r.conn.Write([]byte("ok\n"))
+}
+
 // Path is where the pet listens. PO_SOCK overrides it, which also keeps
 // tests under the short path limit unix sockets have.
 func Path() (string, error) {
@@ -25,9 +45,11 @@ func Path() (string, error) {
 	return filepath.Join(dir, "po", "pet.sock"), nil
 }
 
-// Send hands a finished command to a running pet. It gives up quickly, so a
-// missing pet never slows the shell down.
-func Send(c event.Command) error {
+const ackWait = 300 * time.Millisecond
+
+// Send hands a message to a running pet and waits briefly for it to be
+// handled. It gives up quickly, so a missing pet never slows the shell down.
+func Send(m Message) error {
 	path, err := Path()
 	if err != nil {
 		return err
@@ -38,18 +60,23 @@ func Send(c event.Command) error {
 	}
 	defer conn.Close()
 	conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
-	return json.NewEncoder(conn).Encode(c)
+	if err := json.NewEncoder(conn).Encode(m); err != nil {
+		return err
+	}
+	conn.SetReadDeadline(time.Now().Add(ackWait))
+	_, err = bufio.NewReader(conn).ReadString('\n')
+	return err
 }
 
 type Listener struct {
-	C    <-chan event.Command
+	C    <-chan Request
 	ln   net.Listener
 	path string
 }
 
 var ErrRunning = errors.New("a pet is already running")
 
-// Listen starts receiving commands from shell hooks.
+// Listen starts receiving messages from shell hooks.
 func Listen() (*Listener, error) {
 	path, err := Path()
 	if err != nil {
@@ -69,30 +96,34 @@ func Listen() (*Listener, error) {
 	}
 	os.Chmod(path, 0o600)
 
-	ch := make(chan event.Command, 16)
+	ch := make(chan Request, 16)
 	go func() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			go func() {
-				defer conn.Close()
-				scanner := bufio.NewScanner(conn)
-				for scanner.Scan() {
-					var c event.Command
-					if json.Unmarshal(scanner.Bytes(), &c) != nil {
-						continue
-					}
-					select {
-					case ch <- c:
-					default:
-					}
-				}
-			}()
+			go serve(conn, ch)
 		}
 	}()
 	return &Listener{C: ch, ln: ln, path: path}, nil
+}
+
+func serve(conn net.Conn, ch chan<- Request) {
+	defer conn.Close()
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		var m Message
+		if json.Unmarshal(scanner.Bytes(), &m) != nil {
+			continue
+		}
+		req := Request{Message: m, conn: conn}
+		select {
+		case ch <- req:
+		case <-time.After(time.Second):
+			req.Ack()
+		}
+	}
 }
 
 func (l *Listener) Close() {
