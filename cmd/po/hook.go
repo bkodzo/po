@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -77,7 +78,7 @@ func runNotify(args []string) {
 	if ipc.Send(msg) == nil {
 		return
 	}
-	if os.Getenv("PO_NO_AUTOSTART") != "" || *tty == "" || startDaemon() != nil {
+	if os.Getenv("PO_NO_AUTOSTART") != "" || *tty == "" || stopped() || startDaemon() != nil {
 		return
 	}
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
@@ -101,10 +102,48 @@ func startDaemon() error {
 	return cmd.Process.Release()
 }
 
+// offFile exists while Po has been stopped on purpose. Without it the hook
+// would just start Po again at the next prompt.
+func offFile() (string, error) {
+	sock, err := ipc.Path()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(sock), "off"), nil
+}
+
+func stopped() bool {
+	path, err := offFile()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
+
 func runStop() {
+	if path, err := offFile(); err == nil {
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		os.WriteFile(path, nil, 0o644)
+	}
 	if err := ipc.Send(ipc.Message{Op: "stop"}); err != nil {
-		fmt.Println("po is not running")
+		fmt.Println("po is not running (it stays off until you run `po start`)")
 		return
 	}
-	fmt.Println("po stopped")
+	fmt.Println("po stopped (run `po start` to bring it back)")
+}
+
+func runStart() {
+	if path, err := offFile(); err == nil {
+		os.Remove(path)
+	}
+	if ipc.Send(ipc.Message{Op: "ping"}) == nil {
+		fmt.Println("po is already running")
+		return
+	}
+	if err := startDaemon(); err != nil {
+		fmt.Fprintln(os.Stderr, "po:", err)
+		os.Exit(1)
+	}
+	fmt.Println("po started; it appears at your next prompt")
 }

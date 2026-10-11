@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
 	"github.com/bkodzo/po/internal/theme"
-	"github.com/bkodzo/po/internal/ui"
 )
 
 func main() {
@@ -28,6 +26,10 @@ func main() {
 	}
 	if len(args) > 0 && args[0] == "stop" {
 		runStop()
+		return
+	}
+	if len(args) > 0 && args[0] == "start" {
+		runStart()
 		return
 	}
 	sub := ""
@@ -104,20 +106,7 @@ func main() {
 	}
 
 	if isTerminal(os.Stdin) {
-		listener, err := ipc.Listen()
-		if errors.Is(err, ipc.ErrRunning) {
-			fmt.Fprintln(os.Stderr, "po: a pet is already running (run `po stop` to close it, then try again)")
-			os.Exit(1)
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "po:", err)
-			os.Exit(1)
-		}
-		defer listener.Close()
-		if err := ui.Run(th, p, reader, listener.C); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		fmt.Print(usage)
 		return
 	}
 
@@ -181,3 +170,14 @@ func gallery(th theme.Theme, letters bool) {
 		}
 	}
 }
+
+const usage = `po: a mood-reactive pet for your terminal
+
+  po hook zsh     print the shell hook; add  eval "$(po hook zsh)"  to ~/.zshrc
+  po start        start Po in the background (the hook also does this)
+  po stop         stop Po; it stays off until you run po start
+  po gallery      show every mood
+  po compare      compare the keyword reader with the model (lines from stdin)
+  po eval         score the readers on the labelled lines in testdata/
+  po-view         open the full-size window instead of the corner pet
+`
