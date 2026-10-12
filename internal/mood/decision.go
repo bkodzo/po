@@ -16,6 +16,9 @@ type Decision struct {
 	Model  string
 	Key    string
 	Client *http.Client
+	// TextOnly sends command events as a plain sentence, as the first version
+	// did. It exists so the two ways of asking can be compared.
+	TextOnly bool
 }
 
 func NewDecision(url, model string) *Decision {
@@ -51,15 +54,75 @@ func criteria() map[string]string {
 	return c
 }
 
+// commandCriteria describe the moods for a finished shell command, and point at
+// the fields of the structured state that matter for each.
+func commandCriteria() map[string]string {
+	return map[string]string{
+		string(Frustrated):  "the command failed, especially again and again (see failures_in_a_row_before), or the command was not found",
+		string(Celebrating): "something notable worked: a push, merge, deploy or release, tests or a build passing, or the first success after several failures",
+		string(Focused):     "steady, productive work: editing, building, committing, reading code, searching",
+		string(Tired):       "time_of_day is the small hours or late night, so the person is worn out whatever the command was, even if it succeeded",
+		string(Calm):        "routine, low-stakes commands with nothing notable: listing, status checks, navigation, quick lookups, or a command the user stopped on purpose",
+	}
+}
+
+func outcome(e Event) string {
+	switch {
+	case e.Exit == 0:
+		return "succeeded"
+	case e.Exit == 127:
+		return "failed: command not found"
+	case e.Exit == 130 || e.Exit == 131 || e.Exit == 143:
+		return "stopped by the user on purpose (not a failure)"
+	}
+	return "failed"
+}
+
+func timeOfDay(h int) string {
+	switch {
+	case h >= 0 && h < 5:
+		return "the small hours of the night (after midnight)"
+	case h >= 23:
+		return "late at night"
+	case h < 12:
+		return "morning"
+	case h < 18:
+		return "afternoon"
+	}
+	return "evening"
+}
+
+// commandState is the event as structured fields, which suits the decision
+// model better than a sentence.
+func commandState(e Event) map[string]any {
+	return map[string]any{
+		"command":                  e.Cmd,
+		"exit_code":                e.Exit,
+		"outcome":                  outcome(e),
+		"seconds_taken":            e.Millis / 1000,
+		"failures_in_a_row_before": e.FailStreak,
+		"local_hour":               e.Hour,
+		"time_of_day":              timeOfDay(e.Hour),
+	}
+}
+
 func (d *Decision) Read(e Event) (Reading, error) {
+	var state any = fmt.Sprintf("%s: %s", e.Kind, e.Text)
+	instructions := "What mood is the developer in, judging by this terminal activity?"
+	crit := criteria()
+	if e.Kind == "command" && !d.TextOnly {
+		state = commandState(e)
+		instructions = "A developer just ran this shell command. What mood is it likely to leave them in?"
+		crit = commandCriteria()
+	}
 	body, err := json.Marshal(map[string]any{
 		"model": d.Model,
-		"state": fmt.Sprintf("%s: %s", e.Kind, e.Text),
+		"state": state,
 		"questions": map[string]any{
 			"mood": map[string]any{
 				"type":         "choice",
-				"instructions": "What mood is the developer in, judging by this terminal activity?",
-				"criteria":     criteria(),
+				"instructions": instructions,
+				"criteria":     crit,
 			},
 		},
 	})
