@@ -5,9 +5,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"time"
 
 	"github.com/bkodzo/po/internal/config"
+	"github.com/bkodzo/po/internal/ipc"
+	"github.com/bkodzo/po/internal/modelserver"
 	"github.com/bkodzo/po/internal/mood"
 )
 
@@ -22,6 +25,10 @@ type Stack struct {
 	// MinConfidence is how sure a reading must be before the pet acts on it.
 	MinConfidence float64
 	Cfg           config.Config
+	// Managed starts and stops the local model server on demand. It is nil when
+	// Po is not asked to manage one, and ManagedErr says why if it could not.
+	Managed    *modelserver.Supervisor
+	ManagedErr error
 }
 
 func Build(cfg config.Config) *Stack {
@@ -33,7 +40,7 @@ func Build(cfg config.Config) *Stack {
 	case "rules":
 		s.Reader = mood.Rules{}
 	case "decision":
-		s.Reader = mood.Fallback{Primary: decision(cfg), Backup: mood.Rules{}}
+		s.Reader = mood.Fallback{Primary: s.model(cfg), Backup: mood.Rules{}}
 	case "ollama":
 		o := mood.NewOllama(cfg.URL, cfg.Model)
 		o.Client.Timeout = modelTimeout
@@ -41,12 +48,39 @@ func Build(cfg config.Config) *Stack {
 	default:
 		var slow mood.Reader
 		if cfg.URL != "" {
-			slow = decision(cfg)
+			slow = s.model(cfg)
 		}
 		s.Routed = &mood.Routed{Fast: mood.Rules{}, Slow: slow, Gate: cfg.Gate}
 		s.Reader = s.Routed
 	}
 	return s
+}
+
+// model is the decision reader, wrapped so Po starts the local server when it is
+// wanted if a model file is configured.
+func (s *Stack) model(cfg config.Config) mood.Reader {
+	d := decision(cfg)
+	if cfg.LocalModel == "" || !IsLocal(cfg.URL) {
+		return d
+	}
+	pidFile := ""
+	if sock, err := ipc.Path(); err == nil {
+		pidFile = filepath.Join(filepath.Dir(sock), "model.pid")
+	}
+	sup, err := modelserver.New("", cfg.LocalModel, cfg.URL, pidFile, time.Duration(cfg.IdleMinutes)*time.Minute)
+	if err != nil {
+		s.ManagedErr = err
+		return d
+	}
+	s.Managed = sup
+	return modelserver.Managed{Inner: d, Sup: sup}
+}
+
+// Close stops anything Po started.
+func (s *Stack) Close() {
+	if s.Managed != nil {
+		s.Managed.Stop()
+	}
 }
 
 func decision(cfg config.Config) *mood.Decision {

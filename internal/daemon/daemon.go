@@ -47,6 +47,9 @@ type ModelState struct {
 	Model     string `json:"model"`
 	Local     bool   `json:"local"`
 	Reachable bool   `json:"reachable"`
+	// Process describes the server when Po manages it.
+	Process string `json:"process,omitempty"`
+	Problem string `json:"problem,omitempty"`
 }
 
 // Daemon runs the pet with no window of its own. It draws a two-row creature
@@ -83,6 +86,11 @@ func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 		queue:   make(chan mood.Event, maxQueued),
 	}
 	go d.worker()
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	if st.Managed != nil {
+		go st.Managed.Watch(stopWatch)
+	}
 
 	ticker := time.NewTicker(tickEvery)
 	defer ticker.Stop()
@@ -162,6 +170,12 @@ func (d *Daemon) status() Status {
 			Model:     d.stack.Cfg.Model,
 			Local:     stack.IsLocal(d.stack.Cfg.URL),
 			Reachable: stack.Reachable(d.stack.Cfg.URL),
+		}
+		if d.stack.Managed != nil {
+			st.Model.Process = d.stack.Managed.State()
+		}
+		if d.stack.ManagedErr != nil {
+			st.Model.Problem = d.stack.ManagedErr.Error()
 		}
 	}
 	return st
@@ -245,6 +259,7 @@ func (d *Daemon) draw(tty string) {
 }
 
 func (d *Daemon) shutdown() {
+	d.stack.Close()
 	for tty := range d.targets {
 		d.hide(tty)
 	}

@@ -54,6 +54,12 @@ func runStatus() {
 			where = "local: nothing leaves this machine"
 		}
 		fmt.Printf("model:  %s at %s (%s)\n        %s\n", cfg.Model, cfg.URL, state, where)
+		if st != nil && st.Model != nil && st.Model.Process != "" {
+			fmt.Printf("        server: %s\n", st.Model.Process)
+		}
+		if st != nil && st.Model != nil && st.Model.Problem != "" {
+			fmt.Printf("        cannot manage a local server: %s\n", st.Model.Problem)
+		}
 		if !local && cfg.ReadKey() == "" {
 			fmt.Printf("        warning: no API key found (looked in $%s", cfg.KeyEnv)
 			if cfg.KeyFile != "" {
@@ -126,6 +132,12 @@ func runConfig(args []string) {
 		}
 		fmt.Println(v)
 	case args[0] == "set" && len(args) == 3:
+		if args[1] == "local_model" {
+			if info, err := os.Stat(args[2]); err != nil || info.IsDir() {
+				fmt.Fprintf(os.Stderr, "po: model file %q not found\n", args[2])
+				os.Exit(1)
+			}
+		}
 		if err := cfg.Set(args[1], args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, "po:", err)
 			os.Exit(1)
