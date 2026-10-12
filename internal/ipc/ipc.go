@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bkodzo/po/internal/event"
@@ -27,9 +28,18 @@ type Request struct {
 	conn net.Conn
 }
 
-func (r Request) Ack() {
+func (r Request) Ack() { r.Reply(nil) }
+
+// Reply acknowledges the request and, if v is not nil, sends it back as JSON.
+func (r Request) Reply(v any) {
+	line := []byte("ok")
+	if v != nil {
+		if data, err := json.Marshal(v); err == nil {
+			line = append(append(line, ' '), data...)
+		}
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
-	r.conn.Write([]byte("ok\n"))
+	r.conn.Write(append(line, '\n'))
 }
 
 // Path is where the pet listens. PO_SOCK overrides it, which also keeps
@@ -50,22 +60,34 @@ const ackWait = 300 * time.Millisecond
 // Send hands a message to a running pet and waits briefly for it to be
 // handled. It gives up quickly, so a missing pet never slows the shell down.
 func Send(m Message) error {
+	_, err := Ask(m)
+	return err
+}
+
+// Ask is Send for messages that get data back, such as a status request.
+func Ask(m Message) (json.RawMessage, error) {
 	path, err := Path()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	conn, err := net.DialTimeout("unix", path, 200*time.Millisecond)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close()
 	conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
 	if err := json.NewEncoder(conn).Encode(m); err != nil {
-		return err
+		return nil, err
 	}
 	conn.SetReadDeadline(time.Now().Add(ackWait))
-	_, err = bufio.NewReader(conn).ReadString('\n')
-	return err
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	if rest := strings.TrimSpace(strings.TrimPrefix(line, "ok")); rest != "" {
+		return json.RawMessage(rest), nil
+	}
+	return nil, nil
 }
 
 type Listener struct {

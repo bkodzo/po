@@ -5,10 +5,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/overlay"
 	"github.com/bkodzo/po/internal/pet"
+	"github.com/bkodzo/po/internal/stack"
 	"github.com/bkodzo/po/internal/theme"
 )
 
@@ -21,13 +23,43 @@ const (
 	// flashFor is how long the creature shows its reaction to the latest
 	// command before going back to its longer-term mood.
 	flashFor = 3 * time.Second
+	// streakResets is how long without a command ends a run of failures.
+	streakResets = 30 * time.Minute
 )
+
+// Status is what `po status` reports.
+type Status struct {
+	Mood          string      `json:"mood"`
+	Reader        string      `json:"reader"`
+	Model         *ModelState `json:"model,omitempty"`
+	AnsweredFast  int         `json:"answered_fast"`
+	AnsweredModel int         `json:"answered_model"`
+	ModelFailed   int         `json:"model_failed"`
+	Events        int         `json:"events"`
+	FailStreak    int         `json:"fail_streak"`
+	Terminals     int         `json:"terminals"`
+	UptimeSeconds int         `json:"uptime_seconds"`
+}
+
+// ModelState describes the model Po may ask.
+type ModelState struct {
+	URL       string `json:"url"`
+	Model     string `json:"model"`
+	Local     bool   `json:"local"`
+	Reachable bool   `json:"reachable"`
+}
 
 // Daemon runs the pet with no window of its own. It draws a two-row creature
 // in the corner of each terminal whose shell is waiting at a prompt.
 type Daemon struct {
 	th     theme.Theme
+	stack  *stack.Stack
 	reader mood.Reader
+
+	started    time.Time
+	events     int
+	failStreak int
+	lastCmd    time.Time
 
 	mu         sync.Mutex // guards pet and flash
 	pet        *pet.Pet
@@ -40,10 +72,12 @@ type Daemon struct {
 }
 
 // Run serves requests until a stop message arrives.
-func Run(th theme.Theme, p *pet.Pet, r mood.Reader, l *ipc.Listener) {
+func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 	d := &Daemon{
 		th:      th,
-		reader:  r,
+		stack:   st,
+		reader:  st.Reader,
+		started: time.Now(),
 		pet:     p,
 		targets: map[string]*overlay.Target{},
 		queue:   make(chan mood.Event, maxQueued),
@@ -74,14 +108,63 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 	case "hide":
 		d.hide(req.TTY)
 		return false
+	case "status":
+		req.Reply(d.status())
+		return false
 	}
 	if req.Cmd != nil && !req.Cmd.Ignore() {
-		d.submit(req.Cmd.ToEvent())
+		d.submit(d.eventFor(*req.Cmd))
 	}
 	if req.TTY != "" {
 		d.show(req.TTY)
 	}
 	return false
+}
+
+// eventFor adds what the daemon knows about the run of commands so far: how
+// many failed in a row, and the hour.
+func (d *Daemon) eventFor(c event.Command) mood.Event {
+	now := time.Now()
+	if now.Sub(d.lastCmd) > streakResets {
+		d.failStreak = 0
+	}
+	d.lastCmd = now
+	d.events++
+	e := c.ToEventAt(now.Hour(), d.failStreak)
+	switch {
+	case c.Exit == 0:
+		d.failStreak = 0
+	case c.Exit < 128: // a Ctrl-C or kill is not a failure of the work
+		d.failStreak++
+	}
+	return e
+}
+
+func (d *Daemon) status() Status {
+	d.mu.Lock()
+	m := string(d.pet.Mood)
+	d.mu.Unlock()
+	st := Status{
+		Mood:          m,
+		Reader:        d.stack.Cfg.Reader,
+		Events:        d.events,
+		FailStreak:    d.failStreak,
+		Terminals:     len(d.targets),
+		UptimeSeconds: int(time.Since(d.started).Seconds()),
+	}
+	if d.stack.Routed != nil {
+		rs := d.stack.Routed.Stats()
+		st.AnsweredFast, st.AnsweredModel, st.ModelFailed = rs.Fast, rs.Slow, rs.SlowFailed
+	}
+	if d.stack.UsesModel() {
+		st.Model = &ModelState{
+			URL:       d.stack.Cfg.URL,
+			Model:     d.stack.Cfg.Model,
+			Local:     stack.IsLocal(d.stack.Cfg.URL),
+			Reachable: stack.Reachable(d.stack.Cfg.URL),
+		}
+	}
+	return st
 }
 
 // submit queues an event, dropping the oldest if the queue is full.

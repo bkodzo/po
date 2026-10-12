@@ -8,71 +8,79 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bkodzo/po/internal/config"
 	"github.com/bkodzo/po/internal/daemon"
 	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
+	"github.com/bkodzo/po/internal/stack"
 	"github.com/bkodzo/po/internal/theme"
 )
 
 func main() {
 	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "notify" {
-		runNotify(args[1:])
-		return
+	if len(args) > 0 {
+		switch args[0] {
+		case "notify":
+			runNotify(args[1:])
+			return
+		case "hook":
+			runHook(args[1:])
+			return
+		case "stop":
+			runStop()
+			return
+		case "start":
+			runStart()
+			return
+		case "status":
+			runStatus()
+			return
+		case "config":
+			runConfig(args[1:])
+			return
+		}
 	}
-	if len(args) > 0 && args[0] == "hook" {
-		runHook(args[1:])
-		return
-	}
-	if len(args) > 0 && args[0] == "stop" {
-		runStop()
-		return
-	}
-	if len(args) > 0 && args[0] == "start" {
-		runStart()
-		return
-	}
+
 	sub := ""
 	if len(args) > 0 && (args[0] == "compare" || args[0] == "eval" || args[0] == "gallery" || args[0] == "daemon") {
 		sub, args = args[0], args[1:]
 	}
 
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "po:", err)
+		os.Exit(1)
+	}
+
 	fs := flag.NewFlagSet("po", flag.ExitOnError)
-	themeName := fs.String("theme", "soccer", "pet theme")
-	readerName := fs.String("reader", "auto", "mood reader: auto, decision, ollama or keyword")
-	url := fs.String("url", "", "address of the decision server or ollama")
-	model := fs.String("model", "", "model name for the chosen reader")
+	themeName := fs.String("theme", cfg.Theme, "pet theme")
+	readerName := fs.String("reader", cfg.Reader, "mood reader: auto, rules, keyword, decision or ollama")
+	url := fs.String("url", cfg.URL, "address of the decision server or ollama")
+	model := fs.String("model", cfg.Model, "model name")
 	letters := fs.Bool("letters", false, "gallery: print plain letters instead of colour")
 	data := fs.String("data", "testdata/lines.tsv", "labelled lines for eval")
 	misses := fs.Bool("misses", false, "eval: list every line a reader got wrong")
 	evalReaders := fs.String("readers", "keyword,rules", "eval: readers to score, from keyword, rules, model")
 	fs.Parse(args)
+	cfg.Theme, cfg.Reader, cfg.URL, cfg.Model = *themeName, *readerName, *url, *model
 
-	keyword := mood.Keyword{}
-	var remote mood.Reader
-	if *readerName == "ollama" {
-		remote = mood.NewOllama(*url, *model)
-	} else {
-		remote = mood.NewDecision(*url, *model)
-	}
-
-	th, ok := theme.Get(*themeName)
+	th, ok := theme.Get(cfg.Theme)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown theme %q\n", *themeName)
+		fmt.Fprintf(os.Stderr, "unknown theme %q\n", cfg.Theme)
 		os.Exit(1)
 	}
 
 	switch sub {
 	case "compare":
-		runCompare(keyword, remote)
+		runCompare(mood.Keyword{}, modelReader(cfg))
 		return
 	case "gallery":
 		gallery(th, *letters)
 		return
 	case "eval":
 		showMisses = *misses
-		readers := map[string]mood.Reader{"keyword": keyword, "rules": mood.Rules{}, "model": remote}
+		readers := map[string]mood.Reader{"keyword": mood.Keyword{}, "rules": mood.Rules{}, "model": modelReader(cfg)}
 		var order []string
 		for _, name := range strings.Split(*evalReaders, ",") {
 			name = strings.TrimSpace(name)
@@ -89,23 +97,9 @@ func main() {
 		return
 	}
 
-	var reader mood.Reader
-	switch *readerName {
-	case "keyword":
-		reader = keyword
-	case "decision", "ollama":
-		reader = remote
-	case "auto":
-		reader = mood.Fallback{Primary: remote, Backup: keyword}
-	default:
-		fmt.Fprintf(os.Stderr, "unknown reader %q\n", *readerName)
-		os.Exit(1)
-	}
-
+	st := stack.Build(cfg)
 	p := pet.Load()
-	if *readerName != "keyword" {
-		p.MinConfidence = 0.25
-	}
+	p.MinConfidence = st.MinConfidence
 
 	if sub == "daemon" {
 		listener, err := ipc.Listen()
@@ -113,7 +107,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer listener.Close()
-		daemon.Run(th, p, reader, listener)
+		daemon.Run(th, p, st, listener)
 		return
 	}
 
@@ -124,7 +118,7 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		r, err := reader.Read(mood.Event{Kind: "text", Text: scanner.Text()})
+		r, err := st.Reader.Read(mood.Event{Kind: "text", Text: scanner.Text()})
 		line := ""
 		if err == nil && p.Apply(r) {
 			line = th.Say(p.Mood)
@@ -136,6 +130,16 @@ func main() {
 			fmt.Fprintln(os.Stderr, "could not save state:", err)
 		}
 	}
+}
+
+// modelReader is the model on its own, for comparing and scoring.
+func modelReader(cfg config.Config) mood.Reader {
+	if cfg.Reader == "ollama" {
+		return mood.NewOllama(cfg.URL, cfg.Model)
+	}
+	d := mood.NewDecision(cfg.URL, cfg.Model)
+	d.Key = cfg.ReadKey()
+	return d
 }
 
 func runCompare(keyword, local mood.Reader) {
@@ -185,11 +189,13 @@ func gallery(th theme.Theme, letters bool) {
 
 const usage = `po: a mood-reactive pet for your terminal
 
-  po hook zsh     print the shell hook; add  eval "$(po hook zsh)"  to ~/.zshrc
-  po start        start Po in the background (the hook also does this)
-  po stop         stop Po; it stays off until you run po start
-  po gallery      show every mood
-  po compare      compare the keyword reader with the model (lines from stdin)
-  po eval         score the readers on the labelled lines in testdata/
-  po-view         open the full-size window instead of the corner pet
+  po hook zsh      print the shell hook; add  eval "$(po hook zsh)"  to ~/.zshrc
+  po start         start Po in the background (the hook also does this)
+  po stop          stop Po; it stays off until you run po start
+  po status        show what Po is doing, which reader it uses and where it sends data
+  po config        show or change settings (reader, model address, API key source)
+  po gallery       show every mood
+  po compare       compare the keyword reader with the model (lines from stdin)
+  po eval          score the readers on the labelled lines in testdata/
+  po-view          open the full-size window instead of the corner pet
 `

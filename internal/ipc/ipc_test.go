@@ -86,3 +86,23 @@ func TestSendWithNoPetFailsFast(t *testing.T) {
 		t.Error("send blocked too long")
 	}
 }
+
+func TestAskReturnsData(t *testing.T) {
+	useShortSocket(t)
+	l, err := Listen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		req := <-l.C
+		req.Reply(map[string]any{"mood": "calm", "n": 3})
+	}()
+	raw, err := Ask(Message{Op: "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"mood":"calm","n":3}` {
+		t.Errorf("got %s", raw)
+	}
+}

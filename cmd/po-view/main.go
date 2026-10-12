@@ -9,33 +9,32 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/bkodzo/po/internal/config"
 	"github.com/bkodzo/po/internal/ipc"
-	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/pet"
+	"github.com/bkodzo/po/internal/stack"
 	"github.com/bkodzo/po/internal/theme"
 	"github.com/bkodzo/po/internal/ui"
 )
 
 func main() {
-	themeName := flag.String("theme", "soccer", "pet theme")
-	readerName := flag.String("reader", "auto", "mood reader: auto, decision, ollama or keyword")
-	url := flag.String("url", "", "address of the decision server or ollama")
-	model := flag.String("model", "", "model name for the chosen reader")
-	flag.Parse()
-
-	th, ok := theme.Get(*themeName)
-	if !ok {
-		fatal(fmt.Errorf("unknown theme %q", *themeName))
-	}
-	reader, err := mood.NewReader(*readerName, *url, *model)
+	cfg, err := config.Load()
 	if err != nil {
 		fatal(err)
 	}
+	flag.StringVar(&cfg.Theme, "theme", cfg.Theme, "pet theme")
+	flag.StringVar(&cfg.Reader, "reader", cfg.Reader, "mood reader: auto, rules, keyword, decision or ollama")
+	flag.StringVar(&cfg.URL, "url", cfg.URL, "address of the decision server or ollama")
+	flag.StringVar(&cfg.Model, "model", cfg.Model, "model name")
+	flag.Parse()
 
-	p := pet.Load()
-	if *readerName != "keyword" {
-		p.MinConfidence = 0.25
+	th, ok := theme.Get(cfg.Theme)
+	if !ok {
+		fatal(fmt.Errorf("unknown theme %q", cfg.Theme))
 	}
+	st := stack.Build(cfg)
+	p := pet.Load()
+	p.MinConfidence = st.MinConfidence
 
 	listener, err := ipc.Listen()
 	if errors.Is(err, ipc.ErrRunning) {
@@ -46,7 +45,7 @@ func main() {
 	}
 	defer listener.Close()
 
-	if err := ui.Run(th, p, reader, listener.C); err != nil {
+	if err := ui.Run(th, p, st.Reader, listener.C); err != nil {
 		fatal(err)
 	}
 }
