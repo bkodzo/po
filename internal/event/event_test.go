@@ -77,3 +77,19 @@ func TestIgnoreKeepsFailuresOfBoringCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestToEventCarriesContext(t *testing.T) {
+	e := Command{Text: "go test ./...", Exit: 1, Millis: 90_000}.ToEventAt(2, 2)
+	if e.Kind != "command" || e.Exit != 1 || e.FailStreak != 2 || e.Hour != 2 || e.Millis != 90_000 {
+		t.Errorf("fields not carried: %+v", e)
+	}
+	for _, want := range []string{"failure number 3 in a row", "took 90s", "late at night"} {
+		if !strings.Contains(e.Text, want) {
+			t.Errorf("text %q missing %q", e.Text, want)
+		}
+	}
+	relief := Command{Text: "go test ./...", Exit: 0}.ToEventAt(14, 3)
+	if !strings.Contains(relief.Text, "first success after 3 failures") {
+		t.Errorf("relief not described: %q", relief.Text)
+	}
+}

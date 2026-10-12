@@ -4,15 +4,21 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/mood"
 )
 
+// showMisses makes eval list every line a reader got wrong.
+var showMisses bool
+
 type labelled struct {
-	want mood.Mood
-	text string
+	want  mood.Mood
+	text  string
+	event mood.Event
 }
 
 func loadLabelled(path string) ([]labelled, error) {
@@ -24,11 +30,20 @@ func loadLabelled(path string) ([]labelled, error) {
 	var out []labelled
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		label, text, ok := strings.Cut(scanner.Text(), "\t")
-		if !ok {
-			continue
+		fields := strings.SplitN(scanner.Text(), "\t", 6)
+		switch len(fields) {
+		case 2:
+			// label, text
+			out = append(out, labelled{mood.Mood(fields[0]), fields[1], mood.Event{Kind: "text", Text: fields[1]}})
+		case 6:
+			// label, exit, ms, failure streak, hour, command
+			exit, _ := strconv.Atoi(fields[1])
+			ms, _ := strconv.ParseInt(fields[2], 10, 64)
+			streak, _ := strconv.Atoi(fields[3])
+			hour, _ := strconv.Atoi(fields[4])
+			c := event.Command{Text: fields[5], Exit: exit, Millis: ms}
+			out = append(out, labelled{mood.Mood(fields[0]), fields[5], c.ToEventAt(hour, streak)})
 		}
-		out = append(out, labelled{mood.Mood(label), text})
 	}
 	return out, scanner.Err()
 }
@@ -61,7 +76,7 @@ func readAll(r mood.Reader, lines []labelled) []result {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			reading, err := r.Read(mood.Event{Kind: "text", Text: l.text})
+			reading, err := r.Read(l.event)
 			if err != nil {
 				results[i] = result{err: err}
 				return
@@ -87,6 +102,8 @@ func report(name string, lines []labelled, results []result) {
 		if results[i].got == l.want {
 			correct++
 			c[0]++
+		} else if showMisses {
+			fmt.Printf("  miss: want %-11s got %-11s %.2f  %s\n", l.want, results[i].got, results[i].conf, l.event.Text)
 		}
 		perMood[l.want] = c
 	}

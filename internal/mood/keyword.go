@@ -6,7 +6,7 @@ var keywords = map[Mood][]string{
 	Frustrated:  {"ugh", "fail", "error", "broken", "wtf", "damn", "panic", "again", "why"},
 	Focused:     {"building", "working", "refactor", "wip", "implement", "test"},
 	Celebrating: {"pass", "passed", "works", "done", "shipped", "merged", "finally", "yes"},
-	Tired:       {"tired", "sleep", "late", "zzz", "later", "break"},
+	Tired:       {"tired", "sleep", "late", "zzz", "later", "break", "bed", "tomorrow", "exhausted", "goodnight", "signing off"},
 }
 
 // Keyword is a rule-based stand-in for a model-backed reader.

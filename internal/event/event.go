@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/bkodzo/po/internal/mood"
 )
@@ -61,20 +62,45 @@ func Redact(text string) string {
 	return text
 }
 
-// ToEvent turns a finished command into something a mood reader can judge.
+// ToEvent turns a finished command into something a mood reader can judge,
+// with no history and the current hour.
 func (c Command) ToEvent() mood.Event {
+	return c.ToEventAt(time.Now().Hour(), 0)
+}
+
+// ToEventAt is ToEvent with the surrounding context supplied: the local hour
+// and how many commands in a row failed before this one.
+func (c Command) ToEventAt(hour, failStreak int) mood.Event {
 	text := []rune(Redact(strings.TrimSpace(c.Text)))
 	if len(text) > maxLen {
 		text = append(text[:maxLen], '…')
 	}
+	cmd := string(text)
+
 	var out string
 	if c.Exit == 0 {
-		out = fmt.Sprintf("ran ok: %s", string(text))
+		out = fmt.Sprintf("ran ok: %s", cmd)
 	} else {
-		out = fmt.Sprintf("failed with exit code %d: %s", c.Exit, string(text))
+		out = fmt.Sprintf("failed with exit code %d: %s", c.Exit, cmd)
+	}
+	var notes []string
+	if c.Exit != 0 && failStreak >= 1 {
+		notes = append(notes, fmt.Sprintf("failure number %d in a row", failStreak+1))
+	}
+	if c.Exit == 0 && failStreak >= 2 {
+		notes = append(notes, fmt.Sprintf("first success after %d failures", failStreak))
 	}
 	if c.Millis >= 10_000 {
-		out += fmt.Sprintf(" (took %ds)", c.Millis/1000)
+		notes = append(notes, fmt.Sprintf("took %ds", c.Millis/1000))
 	}
-	return mood.Event{Kind: "command", Text: out}
+	if hour >= 0 && hour < 5 {
+		notes = append(notes, "late at night")
+	}
+	if len(notes) > 0 {
+		out += " (" + strings.Join(notes, ", ") + ")"
+	}
+	return mood.Event{
+		Kind: "command", Text: out,
+		Cmd: cmd, Exit: c.Exit, Millis: c.Millis, FailStreak: failStreak, Hour: hour,
+	}
 }

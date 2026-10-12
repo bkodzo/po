@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bkodzo/po/internal/daemon"
@@ -44,6 +45,8 @@ func main() {
 	model := fs.String("model", "", "model name for the chosen reader")
 	letters := fs.Bool("letters", false, "gallery: print plain letters instead of colour")
 	data := fs.String("data", "testdata/lines.tsv", "labelled lines for eval")
+	misses := fs.Bool("misses", false, "eval: list every line a reader got wrong")
+	evalReaders := fs.String("readers", "keyword,rules", "eval: readers to score, from keyword, rules, model")
 	fs.Parse(args)
 
 	keyword := mood.Keyword{}
@@ -68,8 +71,17 @@ func main() {
 		gallery(th, *letters)
 		return
 	case "eval":
-		readers := map[string]mood.Reader{"keyword": keyword, *readerName: remote}
-		order := []string{"keyword", *readerName}
+		showMisses = *misses
+		readers := map[string]mood.Reader{"keyword": keyword, "rules": mood.Rules{}, "model": remote}
+		var order []string
+		for _, name := range strings.Split(*evalReaders, ",") {
+			name = strings.TrimSpace(name)
+			if _, ok := readers[name]; !ok {
+				fmt.Fprintf(os.Stderr, "unknown reader %q (use keyword, rules or model)\n", name)
+				os.Exit(1)
+			}
+			order = append(order, name)
+		}
 		if err := runEval(*data, readers, order); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

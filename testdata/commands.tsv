@@ -1,0 +1,79 @@
+frustrated	1	800	0	14	go test ./...
+frustrated	1	2300	1	14	go test ./internal/...
+frustrated	1	1200	3	15	npm run build
+frustrated	2	300	0	10	python app.py
+frustrated	1	4100	2	16	cargo build --release
+frustrated	1	150	0	11	cd missing-dir
+frustrated	1	90	0	9	ls /nonexistent
+frustrated	1	6000	1	20	docker build -t api .
+frustrated	137	31000	0	13	make deploy
+frustrated	1	700	4	17	pytest tests/
+frustrated	128	420	0	12	git push origin main
+frustrated	1	260	1	10	git commit -m "fix parser"
+frustrated	1	3300	5	19	npm test
+frustrated	1	5000	0	11	kubectl apply -f deploy.yaml
+frustrated	1	900	2	15	curl -f https://api.example.com/health
+frustrated	127	10	0	10	gti status
+frustrated	127	10	0	15	pytst
+frustrated	2	120	1	13	rm -r build/
+frustrated	1	45000	1	16	go build ./...
+frustrated	1	2000	3	22	tsc --noEmit
+celebrating	0	1800	2	14	go test ./...
+celebrating	0	2500	3	15	npm test
+celebrating	0	900	0	14	go test ./...
+celebrating	0	3500	0	11	pytest tests/
+celebrating	0	700	0	16	git push origin main
+celebrating	0	1500	0	17	git push
+celebrating	0	500	0	15	git merge feature-login
+celebrating	0	22000	0	13	make deploy
+celebrating	0	9000	0	14	kubectl apply -f deploy.yaml
+celebrating	0	4000	2	10	cargo build --release
+celebrating	0	1200	4	16	npm run build
+celebrating	0	600	2	12	python app.py
+celebrating	0	300	0	15	gh pr merge 42 --squash
+celebrating	0	8000	0	14	terraform apply -auto-approve
+celebrating	0	2000	1	14	cargo test
+celebrating	0	150	3	11	git commit -m "finally works"
+celebrating	0	100	2	13	curl -f https://api.example.com/health
+focused	0	50	0	14	vim internal/server/handler.go
+focused	0	1800000	0	10	nvim main.go
+focused	0	180	0	15	git commit -m "wip: pagination"
+focused	0	200	0	11	git commit -m "extract config loading"
+focused	0	120	0	14	git diff
+focused	0	80	0	16	grep -rn "TODO" src/
+focused	0	6000	0	10	go build ./...
+focused	0	3000	0	13	npm run build
+focused	0	90000	0	14	docker build -t api .
+focused	0	300000	0	11	cargo build --release
+focused	0	60	0	15	rg "handleRequest" internal/
+focused	0	5000	0	10	make
+calm	130	8000	0	14	go run ./cmd/server
+calm	130	2000	0	11	npm start
+focused	0	700	0	15	code .
+focused	0	400	1	16	git diff HEAD~3
+tired	0	60	0	2	git status
+tired	0	200	0	1	git commit -m "good enough for today"
+tired	0	150	0	3	git push
+tired	0	900	0	2	go test ./...
+tired	0	40	0	1	cat README.md
+tired	0	50	0	3	vim notes.md
+tired	0	110	0	2	ls -la
+tired	0	300	0	4	git log --oneline
+tired	0	2500	0	1	npm run build
+tired	0	70	0	0	echo done
+tired	0	250	0	23	git commit -m "stop, going to bed"
+tired	0	90	0	2	pwd
+calm	0	40	0	14	git status
+calm	0	60	0	10	git log --oneline
+calm	0	80	0	15	cat README.md
+calm	0	35	0	11	which python3
+calm	0	50	0	13	echo hi
+calm	0	45	0	16	date
+calm	0	2000	0	14	brew install jq
+calm	0	3000	0	10	npm install
+calm	0	60	0	15	docker ps
+calm	0	100	0	12	kubectl get pods
+calm	0	70	0	9	whoami
+calm	0	40	0	17	man tar
+calm	0	150	0	11	open .
+calm	130	500	0	15	sleep 100
