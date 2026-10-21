@@ -6,13 +6,13 @@ import CoreGraphics
 // and snaps to screen edges. It owns no logic: it plays the theme Po exported
 // and follows the state Po streams.
 //
-//   PoWindow                  show the pet (Po must be running)
-//   PoWindow --level popup    try another window level
-//   PoWindow --scale 4        pixels per sprite pixel
-//   PoWindow --seconds 10     quit by itself after a while
-//   PoWindow --listen         no window: print what Po streams, to check the link
-//   PoWindow --log            print the current mood and frame once a second
-//   PoWindow --probe          print display info and what is readable about other windows
+//   po-window                  show the pet (Po must be running)
+//   po-window --level popup    try another window level
+//   po-window --scale 4        pixels per sprite pixel
+//   po-window --seconds 10     quit by itself after a while
+//   po-window --listen         no window: print what Po streams, to check the link
+//   po-window --log            print the current mood and frame once a second
+//   po-window --probe          print display info and what is readable about other windows
 
 struct Options {
     var level = "status"
@@ -228,8 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         stream.onStatus = { [weak self] status in self?.handle(status: status) }
         stream.onState = { [weak self] state in self?.apply(state) }
-        stream.start()
-        if loadTheme() { panel.orderFrontRegardless() }
+        stream.start() // the window appears once it is connected to Po
 
         // One tick per frame of the animation. The theme says how fast that is.
         let fps = max(1, view.cache?.pack.fps["full"] ?? 8)
@@ -277,10 +276,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "connected":
             seenLineSeq = nil // the first state after connecting is not news
             if loadTheme() { panel.orderFrontRegardless() }
-        case "disconnected":
-            break
         default:
-            break
+            // Po is not there, so there is nothing to show. The window comes back
+            // by itself when Po does.
+            panel.orderOut(nil)
         }
     }
 
@@ -393,9 +392,9 @@ func probe() {
     let normal = raw.filter { ($0[kCGWindowLayer as String] as? Int) == 0 }
     print("on-screen windows: \(raw.count) total, \(normal.count) ordinary")
     // Our own window may sit on any layer, so look for it across all of them.
-    for w in raw where ((w[kCGWindowOwnerName as String] as? String) ?? "") == "PoWindow" {
+    for w in raw where ((w[kCGWindowOwnerName as String] as? String) ?? "") == "po-window" {
         let b = (w[kCGWindowBounds as String] as? [String: Any]) ?? [:]
-        print("  PoWindow window: layer \(w[kCGWindowLayer as String] ?? "?"), alpha \(w[kCGWindowAlpha as String] ?? "?"), x \(b["X"] ?? "?") y \(b["Y"] ?? "?") w \(b["Width"] ?? "?") h \(b["Height"] ?? "?")")
+        print("  po-window window: layer \(w[kCGWindowLayer as String] ?? "?"), alpha \(w[kCGWindowAlpha as String] ?? "?"), x \(b["X"] ?? "?") y \(b["Y"] ?? "?") w \(b["Width"] ?? "?") h \(b["Height"] ?? "?")")
     }
     for w in normal.prefix(8) {
         let owner = (w[kCGWindowOwnerName as String] as? String) ?? "?"
