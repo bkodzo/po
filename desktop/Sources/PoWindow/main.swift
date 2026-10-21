@@ -409,6 +409,21 @@ func probe() {
 // MARK: - Main
 
 let options = parseOptions()
+
+/// Ctrl+Z would suspend the program and leave its window frozen on screen, with
+/// nothing left running to remove it. Quit instead.
+var suspendWatcher: DispatchSourceSignal?
+func quitOnSuspend() {
+    signal(SIGTSTP, SIG_IGN)
+    let watcher = DispatchSource.makeSignalSource(signal: SIGTSTP, queue: .main)
+    watcher.setEventHandler {
+        print("Ctrl+Z received: quitting instead of freezing the window")
+        NSApp.terminate(nil)
+    }
+    watcher.resume()
+    suspendWatcher = watcher
+}
+
 if options.probe {
     probe()
 } else if options.listen {
@@ -416,6 +431,7 @@ if options.probe {
 } else {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
+    quitOnSuspend()
     let delegate = AppDelegate(options: options)
     app.delegate = delegate
     app.run()
