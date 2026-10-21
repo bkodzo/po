@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "PoSpike",
+    name: "PoWindow",
     platforms: [.macOS(.v13)],
     targets: [
-        .executableTarget(name: "PoSpike", path: "Sources/PoSpike"),
+        .executableTarget(name: "PoWindow", path: "Sources/PoWindow"),
     ]
 )
