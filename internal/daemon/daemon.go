@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bkodzo/po/internal/event"
@@ -27,6 +29,31 @@ const (
 	streakResets = 30 * time.Minute
 )
 
+// State is what a body (a window that draws the pet) needs to know, streamed to
+// subscribers whenever it changes.
+type State struct {
+	V int `json:"v"`
+	// Mood is what to show now: a reaction to the latest command while it is
+	// fresh, otherwise the longer-term mood.
+	Mood string `json:"mood"`
+	// Resting is the longer-term mood.
+	Resting string `json:"resting"`
+	// Line is the latest thing the pet said, and LineSeq goes up each time it
+	// says something new, so a body can tell a repeat from a new line.
+	Line    string `json:"line,omitempty"`
+	LineSeq int    `json:"line_seq"`
+	Theme   string `json:"theme"`
+}
+
+// StateVersion is bumped when State changes in a way a body would notice.
+const StateVersion = 1
+
+type subscriber struct {
+	req  ipc.Request
+	ch   chan State
+	dead atomic.Bool
+}
+
 // Status is what `po status` reports.
 type Status struct {
 	Mood          string      `json:"mood"`
@@ -38,6 +65,7 @@ type Status struct {
 	Events        int         `json:"events"`
 	FailStreak    int         `json:"fail_streak"`
 	Terminals     int         `json:"terminals"`
+	Subscribers   int         `json:"subscribers"`
 	UptimeSeconds int         `json:"uptime_seconds"`
 }
 
@@ -68,10 +96,15 @@ type Daemon struct {
 	pet        *pet.Pet
 	flash      mood.Mood
 	flashUntil time.Time
+	line       string
+	lineSeq    int
 
 	tick    int
 	targets map[string]*overlay.Target
 	queue   chan mood.Event
+
+	subs      map[*subscriber]struct{}
+	lastState State
 }
 
 // Run serves requests until a stop message arrives.
@@ -84,7 +117,9 @@ func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 		pet:     p,
 		targets: map[string]*overlay.Target{},
 		queue:   make(chan mood.Event, maxQueued),
+		subs:    map[*subscriber]struct{}{},
 	}
+	d.exportTheme()
 	go d.worker()
 	stopWatch := make(chan struct{})
 	defer close(stopWatch)
@@ -98,7 +133,9 @@ func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 		select {
 		case req := <-l.C:
 			stop := d.handle(req)
-			req.Ack()
+			if req.Op != "subscribe" {
+				req.Ack()
+			}
 			if stop {
 				d.shutdown()
 				return
@@ -118,6 +155,9 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 		return false
 	case "status":
 		req.Reply(d.status())
+		return false
+	case "subscribe":
+		d.subscribe(req)
 		return false
 	}
 	if req.Cmd != nil && !req.Cmd.Ignore() {
@@ -158,6 +198,7 @@ func (d *Daemon) status() Status {
 		Events:        d.events,
 		FailStreak:    d.failStreak,
 		Terminals:     len(d.targets),
+		Subscribers:   len(d.subs),
 		UptimeSeconds: int(time.Since(d.started).Seconds()),
 	}
 	if d.stack.Routed != nil {
@@ -205,6 +246,8 @@ func (d *Daemon) worker() {
 		if err == nil {
 			if top, conf := reading.Top(); conf >= d.pet.MinConfidence {
 				d.flash, d.flashUntil = top, time.Now().Add(flashFor)
+				d.line = d.th.Say(top)
+				d.lineSeq++
 			}
 			d.pet.Apply(reading)
 		}
@@ -239,6 +282,77 @@ func (d *Daemon) redraw() {
 	for tty := range d.targets {
 		d.draw(tty)
 	}
+	d.broadcast()
+}
+
+// current is the state as of now.
+func (d *Daemon) current() State {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	shown := d.pet.Mood
+	if time.Now().Before(d.flashUntil) {
+		shown = d.flash
+	}
+	return State{
+		V: StateVersion, Mood: string(shown), Resting: string(d.pet.Mood),
+		Line: d.line, LineSeq: d.lineSeq, Theme: d.th.Name,
+	}
+}
+
+// subscribe starts streaming state to a body. The first reply is the current
+// state, so a body that connects late is correct straight away.
+func (d *Daemon) subscribe(req ipc.Request) {
+	sub := &subscriber{req: req, ch: make(chan State, 4)}
+	req.Reply(d.current())
+	d.subs[sub] = struct{}{}
+	go func() {
+		for st := range sub.ch {
+			if req.Write(st) != nil {
+				break
+			}
+		}
+		sub.dead.Store(true)
+	}()
+}
+
+// broadcast sends the state to every subscriber if it has changed. A slow
+// subscriber never holds up the pet: if its queue is full, its oldest update is
+// dropped.
+func (d *Daemon) broadcast() {
+	for sub := range d.subs {
+		if sub.dead.Load() {
+			close(sub.ch)
+			delete(d.subs, sub)
+		}
+	}
+	st := d.current()
+	if st == d.lastState {
+		return
+	}
+	d.lastState = st
+	for sub := range d.subs {
+		for {
+			select {
+			case sub.ch <- st:
+			default:
+				select {
+				case <-sub.ch:
+				default:
+				}
+				continue
+			}
+			break
+		}
+	}
+}
+
+// exportTheme writes the theme where a window can find it, next to the socket.
+func (d *Daemon) exportTheme() {
+	sock, err := ipc.Path()
+	if err != nil {
+		return
+	}
+	_ = d.th.WriteFile(filepath.Join(filepath.Dir(sock), "theme.json"))
 }
 
 func (d *Daemon) draw(tty string) {
@@ -260,6 +374,10 @@ func (d *Daemon) draw(tty string) {
 
 func (d *Daemon) shutdown() {
 	d.stack.Close()
+	for sub := range d.subs {
+		close(sub.ch)
+		delete(d.subs, sub)
+	}
 	for tty := range d.targets {
 		d.hide(tty)
 	}

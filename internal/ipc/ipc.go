@@ -42,6 +42,18 @@ func (r Request) Reply(v any) {
 	r.conn.Write(append(line, '\n'))
 }
 
+// Write sends one more JSON line on the connection, for streaming replies after
+// the first acknowledgement. It fails once the client has gone away.
+func (r Request) Write(v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	r.conn.SetWriteDeadline(time.Now().Add(time.Second))
+	_, err = r.conn.Write(append(data, '\n'))
+	return err
+}
+
 // Path is where the pet listens. PO_SOCK overrides it, which also keeps
 // tests under the short path limit unix sockets have.
 func Path() (string, error) {
@@ -152,3 +164,55 @@ func (l *Listener) Close() {
 	l.ln.Close()
 	os.Remove(l.path)
 }
+
+// Subscription is a stream of JSON lines from the pet.
+type Subscription struct {
+	conn  net.Conn
+	r     *bufio.Reader
+	first json.RawMessage // the state sent when subscribing, returned by the first Next
+}
+
+// Subscribe asks a running pet to stream its state. The first line is the
+// current state, and a new line follows each change.
+func Subscribe() (*Subscription, error) {
+	path, err := Path()
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.DialTimeout("unix", path, 200*time.Millisecond)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.NewEncoder(conn).Encode(Message{Op: "subscribe"}); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	sub := &Subscription{conn: conn, r: bufio.NewReader(conn)}
+	conn.SetReadDeadline(time.Now().Add(ackWait))
+	line, err := sub.r.ReadString('\n')
+	if err != nil || !strings.HasPrefix(line, "ok") {
+		conn.Close()
+		return nil, errors.New("the pet did not accept the subscription")
+	}
+	conn.SetReadDeadline(time.Time{})
+	if rest := strings.TrimSpace(strings.TrimPrefix(line, "ok")); rest != "" {
+		sub.first = json.RawMessage(rest)
+	}
+	return sub, nil
+}
+
+// Next returns the state sent when subscribing, then blocks until each change.
+func (s *Subscription) Next() (json.RawMessage, error) {
+	if s.first != nil {
+		first := s.first
+		s.first = nil
+		return first, nil
+	}
+	line, err := s.r.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(strings.TrimSpace(line)), nil
+}
+
+func (s *Subscription) Close() { s.conn.Close() }

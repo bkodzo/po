@@ -39,6 +39,12 @@ func main() {
 		case "config":
 			runConfig(args[1:])
 			return
+		case "watch":
+			runWatch()
+			return
+		case "theme":
+			runTheme(args[1:])
+			return
 		}
 	}
 
@@ -194,6 +200,8 @@ const usage = `po: a mood-reactive pet for your terminal
   po stop          stop Po; it stays off until you run po start
   po status        show what Po is doing, which reader it uses and where it sends data
   po config        show or change settings (reader, model address, API key source)
+  po watch         print the pet's state as it changes (what a window receives)
+  po theme export  write the theme as data for a window to play
   po gallery       show every mood
   po compare       compare the keyword reader with the model (lines from stdin)
   po eval          score the readers on the labelled lines in testdata/
