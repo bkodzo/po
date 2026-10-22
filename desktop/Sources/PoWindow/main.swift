@@ -409,18 +409,29 @@ func probe() {
 
 let options = parseOptions()
 
+// Show log lines as they happen even when output goes to a file, as it does
+// when the login agent runs the window.
+setvbuf(stdout, nil, _IOLBF, 0)
+
+/// Signals that should end the window cleanly, with a normal exit status.
+///
 /// Ctrl+Z would suspend the program and leave its window frozen on screen, with
-/// nothing left running to remove it. Quit instead.
-var suspendWatcher: DispatchSourceSignal?
-func quitOnSuspend() {
-    signal(SIGTSTP, SIG_IGN)
-    let watcher = DispatchSource.makeSignalSource(signal: SIGTSTP, queue: .main)
-    watcher.setEventHandler {
-        print("Ctrl+Z received: quitting instead of freezing the window")
-        NSApp.terminate(nil)
+/// nothing left running to remove it. And a plain "please stop" (SIGTERM) must
+/// count as a normal exit, or the login agent would take it for a crash and
+/// start the window again.
+var signalWatchers: [DispatchSourceSignal] = []
+func quitOnSignals() {
+    for (sig, reason) in [(SIGTSTP, "Ctrl+Z received: quitting instead of freezing the window"),
+                          (SIGTERM, "asked to stop: quitting")] {
+        signal(sig, SIG_IGN)
+        let watcher = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+        watcher.setEventHandler {
+            print(reason)
+            NSApp.terminate(nil)
+        }
+        watcher.resume()
+        signalWatchers.append(watcher)
     }
-    watcher.resume()
-    suspendWatcher = watcher
 }
 
 if options.probe {
@@ -430,7 +441,7 @@ if options.probe {
 } else {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    quitOnSuspend()
+    quitOnSignals()
     let delegate = AppDelegate(options: options)
     app.delegate = delegate
     app.run()

@@ -204,6 +204,7 @@ const usage = `po: a mood-reactive pet for your terminal
   po status        show what Po is doing, which reader it uses and where it sends data
   po config        show or change settings (reader, model address, API key source)
   po window        show the pet as a small window on your desktop (po window stop to close)
+  po window login on|off   start the window automatically at every login
   po watch         print the pet's state as it changes (what a window receives)
   po theme export  write the theme as data for a window to play
   po gallery       show every mood

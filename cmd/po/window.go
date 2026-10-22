@@ -31,6 +31,9 @@ func windowFiles() (pidFile, logFile string, err error) {
 // to this program, then in the repository's build folder.
 func findWindowProgram() (string, error) {
 	if p := os.Getenv("PO_WINDOW"); p != "" {
+		if info, err := os.Stat(p); err != nil || info.IsDir() {
+			return "", fmt.Errorf("PO_WINDOW points to %s, which is not a program", p)
+		}
 		return p, nil
 	}
 	exe, err := os.Executable()
@@ -51,6 +54,9 @@ func findWindowProgram() (string, error) {
 // runningWindow returns the pid of the window if it is running. The command
 // name is checked too, so a recycled pid is never mistaken for it.
 func runningWindow() (int, bool) {
+	if pid, ok := agentPID(); ok {
+		return pid, true
+	}
 	pidFile, _, err := windowFiles()
 	if err != nil {
 		return 0, false
@@ -135,10 +141,11 @@ func windowStop() string {
 }
 
 func windowStatus() string {
+	running := "the window is not running (start it with: po window)"
 	if pid, ok := runningWindow(); ok {
-		return fmt.Sprintf("the window is running (pid %d)", pid)
+		running = fmt.Sprintf("the window is running (pid %d)", pid)
 	}
-	return "the window is not running (start it with: po window)"
+	return running + "\n" + loginStatus()
 }
 
 func runWindow(args []string) {
@@ -158,8 +165,29 @@ func runWindow(args []string) {
 		fmt.Println(windowStop())
 	case "status":
 		fmt.Println(windowStatus())
+	case "run":
+		// Used by the login agent.
+		if err := runWindowForeground(); err != nil {
+			fmt.Fprintln(os.Stderr, "po:", err)
+			os.Exit(1)
+		}
+	case "login":
+		if len(args) != 2 || (args[1] != "on" && args[1] != "off") {
+			fmt.Fprintln(os.Stderr, "usage: po window login on|off")
+			os.Exit(2)
+		}
+		if args[1] == "off" {
+			fmt.Println(loginOff())
+			return
+		}
+		msg, err := loginOn()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "po:", err)
+			os.Exit(1)
+		}
+		fmt.Println(msg)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: po window [start | stop | status]")
+		fmt.Fprintln(os.Stderr, "usage: po window [start | stop | status | login on|off]")
 		os.Exit(2)
 	}
 }
