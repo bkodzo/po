@@ -22,11 +22,13 @@ var Soccer = Theme{
 		'z': sprite.RGB(150, 190, 255),
 		'y': sprite.RGB(255, 230, 90),
 	},
-	Tints: map[mood.Mood]sprite.Color{
-		mood.Frustrated:  sprite.RGB(235, 70, 60),
-		mood.Focused:     sprite.RGB(90, 170, 220),
-		mood.Celebrating: sprite.RGB(255, 205, 60),
-		mood.Tired:       sprite.RGB(110, 120, 190),
+	Tints: map[mood.Mood]Tint{
+		mood.Frustrated:  {Color: sprite.RGB(235, 70, 60), Strength: 0.45},
+		mood.Celebrating: {Color: sprite.RGB(255, 205, 60), Strength: 0.45},
+		// Tired is a dusty lilac and focused a cool hint, because orange pushed
+		// toward blue turns a muddy grey.
+		mood.Tired:   {Color: sprite.RGB(150, 130, 200), Strength: 0.40},
+		mood.Focused: {Color: sprite.RGB(90, 170, 220), Strength: 0.22},
 	},
 	Lines: map[mood.Mood][]string{
 		mood.Frustrated:  {"That was a red card build.", "Bad tackle by the compiler.", "We go again."},

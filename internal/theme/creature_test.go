@@ -57,3 +57,24 @@ func TestMiniFrameFitsTwoRows(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryTintedMoodLooksDifferentFromCalm(t *testing.T) {
+	_, calm := Soccer.Frame(mood.Calm, 0)
+	for _, m := range []mood.Mood{mood.Frustrated, mood.Celebrating, mood.Tired, mood.Focused} {
+		_, pal := Soccer.Frame(m, 0)
+		if pal['b'] == calm['b'] {
+			t.Errorf("%s has the same body colour as calm", m)
+		}
+	}
+}
+
+func TestTiredZStaysFullyInsideTheCanvas(t *testing.T) {
+	for tick := 0; tick < 64; tick++ {
+		c, _ := Soccer.Frame(mood.Tired, tick)
+		letters := c.Letters()
+		// All ten pixels of the Z must be drawn, so none was clipped.
+		if n := strings.Count(letters, "z"); n != 10 {
+			t.Fatalf("tick %d: the Z has %d pixels drawn, want 10 (part of it is outside the canvas)", tick, n)
+		}
+	}
+}

@@ -11,9 +11,16 @@ type Theme struct {
 	Name    string
 	Palette sprite.Palette
 	// Tints shift the creature's body colour toward a mood colour.
-	Tints  map[mood.Mood]sprite.Color
+	Tints  map[mood.Mood]Tint
 	Lines  map[mood.Mood][]string
 	Unsure []string
+}
+
+// Tint moves the body colour part of the way toward a colour. Colours far from
+// the body's own hue go muddy if pushed hard, so the strength is chosen per mood.
+type Tint struct {
+	Color    sprite.Color
+	Strength float64
 }
 
 func (t Theme) Say(m mood.Mood) string {

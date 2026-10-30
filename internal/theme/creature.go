@@ -47,7 +47,7 @@ func (t Theme) paletteFor(m mood.Mood) sprite.Palette {
 	}
 	if tint, ok := t.Tints[m]; ok {
 		for _, k := range "blsf" {
-			pal[k] = pal[k].Mix(tint, 0.45)
+			pal[k] = pal[k].Mix(tint.Color, tint.Strength)
 		}
 	}
 	return pal
@@ -201,10 +201,14 @@ func extras(c *sprite.Canvas, m mood.Mood, t int) {
 			c.Set(p.x, y-1, 'g')
 		}
 	case mood.Tired:
-		// A drifting Z.
+		// A drifting Z, four pixels square so the diagonal is readable.
 		step := (t / 4) % 4
-		x, y := cx+5+step%2, bodyY-2-step
-		for _, px := range [][2]int{{0, 0}, {1, 0}, {2, 0}, {1, 1}, {0, 2}, {1, 2}, {2, 2}} {
+		// It drifts up from just above the head but stays inside the canvas.
+		x, y := cx+5+step%2, 2-step
+		if y < 0 {
+			y = 0
+		}
+		for _, px := range [][2]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}, {2, 1}, {1, 2}, {0, 3}, {1, 3}, {2, 3}, {3, 3}} {
 			c.Set(x+px[0], y+px[1], 'z')
 		}
 	case mood.Celebrating:
