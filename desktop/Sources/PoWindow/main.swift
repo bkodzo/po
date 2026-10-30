@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import CoreGraphics
 
 // Po's desktop window: a small transparent pet that floats above other windows,
@@ -13,6 +14,9 @@ import CoreGraphics
 //   po-window --listen         no window: print what Po streams, to check the link
 //   po-window --log            print the current mood and frame once a second
 //   po-window --probe          print display info and what is readable about other windows
+//   po-window --selftest       check the pointer and grab rules
+//
+// Hold Option over the creature to grab it; Control+Option+P hides or shows it.
 
 struct Options {
     var level = "status"
@@ -21,6 +25,8 @@ struct Options {
     var probe = false
     var listen = false
     var log = false
+    var selftest = false
+    var scaleGiven = false
 }
 
 func parseOptions() -> Options {
@@ -30,11 +36,12 @@ func parseOptions() -> Options {
         let a = args.removeFirst()
         switch a {
         case "--level": if !args.isEmpty { o.level = args.removeFirst() }
-        case "--scale": if !args.isEmpty { o.scale = max(1, Int(args.removeFirst()) ?? 5) }
+        case "--scale": if !args.isEmpty { o.scale = max(1, Int(args.removeFirst()) ?? 5); o.scaleGiven = true }
         case "--seconds": if !args.isEmpty { o.seconds = Double(args.removeFirst()) }
         case "--probe": o.probe = true
         case "--listen": o.listen = true
         case "--log": o.log = true
+        case "--selftest": o.selftest = true
         default: break
         }
     }
@@ -64,7 +71,8 @@ final class PetView: NSView {
     var dragging = false
     var onDragEnd: (() -> Void)?
 
-    let scale: Int
+    var scale: Int
+    var menuProvider: (() -> NSMenu)?
     private var grabOffset = NSPoint.zero
 
     static let bubbleRoom: CGFloat = 64
@@ -159,8 +167,7 @@ final class PetView: NSView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Quit Po window", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        guard let menu = menuProvider?() else { return }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
@@ -184,7 +191,7 @@ final class PetView: NSView {
 
 // MARK: - The app
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let options: Options
     var panel: NSPanel!
     var view: PetView!
@@ -192,14 +199,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var seenLineSeq: Int?
     var lastStatus = ""
     var lastFrameKey = ""
+    var connected = false
+    var userHidden = false
+    var alwaysGrab = UserDefaults.standard.bool(forKey: "alwaysGrab")
+    var targetAlpha: CGFloat = 1
+    var statusItem: NSStatusItem?
+    var hotKey: HotKey?
+    var lastIcon = ""
+    var interaction = "far"
     // Counters for --log, to see where the time goes.
     var ticksSinceLog = 0, redrawsSinceLog = 0, mouseSinceLog = 0
 
     init(options: Options) { self.options = options }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        view = PetView(scale: options.scale)
+        let saved = UserDefaults.standard.integer(forKey: "scale")
+        view = PetView(scale: options.scaleGiven ? options.scale : (saved > 0 ? saved : options.scale))
         view.onDragEnd = { [weak self] in self?.savePosition() }
+        view.menuProvider = { [weak self] in self?.makeMenu() ?? NSMenu() }
 
         panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: view.frame.size),
@@ -218,13 +235,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.ignoresMouseEvents = true // until the pointer is over the creature
         restorePosition()
 
-        // Clicks pass through everything but the creature. Mouse-moved events
-        // reach us even while the window ignores the mouse, via the global monitor.
-        NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in self?.updateClickThrough() }
+        // Clicks pass through, and the pet fades when the pointer is near. Mouse
+        // moves reach us even while the window ignores the mouse, through the
+        // global monitor; holding Option is noticed on the animation tick.
+        NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in self?.updateInteraction() }
         NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
-            self?.updateClickThrough()
+            self?.updateInteraction()
             return event
         }
+
+        setUpStatusItem()
+        hotKey = HotKey(keyCode: kVK_ANSI_P, modifiers: controlKey | optionKey) { [weak self] in self?.toggleHidden() }
+        print(hotKey == nil ? "hotkey Control+Option+P could not be registered (another app may use it)"
+                            : "hotkey Control+Option+P hides or shows the pet; hold Option over it to grab it")
 
         stream.onStatus = { [weak self] status in self?.handle(status: status) }
         stream.onState = { [weak self] state in self?.apply(state) }
@@ -243,7 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         }
-        print("Po window started: level \(options.level) (\(panel.level.rawValue)), scale \(options.scale)")
+        print("Po window started: level \(options.level) (\(panel.level.rawValue)), scale \(view.scale)")
     }
 
     /// Reads the theme the pet exported. Returns whether there is one to play.
@@ -252,13 +275,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let pack = try ThemePack.load(from: PoPaths.theme)
             view.cache = FrameCache(pack: pack)
-            let size = PetView.size(scale: options.scale, sprite: view.spriteSize)
-            let oldTop = panel.frame.maxY
-            let oldRight = panel.frame.maxX
-            view.setFrameSize(size)
-            panel.setContentSize(size)
-            panel.setFrameOrigin(NSPoint(x: oldRight - size.width, y: oldTop - size.height))
-            view.needsDisplay = true
+            resize(toScale: view.scale)
+            updateStatusIcon()
             return true
         } catch {
             if lastStatus != "no theme" {
@@ -275,18 +293,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch status {
         case "connected":
             seenLineSeq = nil // the first state after connecting is not news
-            if loadTheme() { panel.orderFrontRegardless() }
+            connected = loadTheme()
         default:
             // Po is not there, so there is nothing to show. The window comes back
             // by itself when Po does.
+            connected = false
+        }
+        refreshVisibility()
+    }
+
+    /// The pet shows while Po is there and the person has not hidden it.
+    func refreshVisibility() {
+        if connected && !userHidden {
+            panel.orderFrontRegardless()
+        } else {
             panel.orderOut(nil)
         }
+    }
+
+    @objc func toggleHidden() {
+        userHidden.toggle()
+        print(userHidden ? "hidden (Control+Option+P shows it again)" : "shown")
+        refreshVisibility()
+    }
+
+    /// Changes the size, keeping the creature's bottom-right corner where it is.
+    func resize(toScale n: Int) {
+        view.scale = n
+        let size = PetView.size(scale: n, sprite: view.spriteSize)
+        let bottom = panel.frame.minY
+        let right = panel.frame.maxX
+        view.setFrameSize(size)
+        panel.setContentSize(size)
+        panel.setFrameOrigin(NSPoint(x: right - size.width, y: bottom))
+        view.needsDisplay = true
+    }
+
+    @objc func chooseSize(_ item: NSMenuItem) {
+        resize(toScale: item.tag)
+        UserDefaults.standard.set(item.tag, forKey: "scale")
+        savePosition()
+    }
+
+    @objc func toggleAlwaysGrab() {
+        alwaysGrab.toggle()
+        UserDefaults.standard.set(alwaysGrab, forKey: "alwaysGrab")
+        updateInteraction()
+    }
+
+    // MARK: Menus
+
+    func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        fill(menu)
+        return menu
+    }
+
+    func fill(_ menu: NSMenu) {
+        let toggle = NSMenuItem(title: (userHidden ? "Show Po" : "Hide Po") + "    \u{2303}\u{2325}P", action: #selector(toggleHidden), keyEquivalent: "")
+        toggle.target = self
+        menu.addItem(toggle)
+
+        let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
+        let sizes = NSMenu()
+        for (name, value) in [("Small", 3), ("Medium", 4), ("Large", 5), ("Extra large", 6)] {
+            let it = NSMenuItem(title: name, action: #selector(chooseSize(_:)), keyEquivalent: "")
+            it.target = self
+            it.tag = value
+            it.state = view.scale == value ? .on : .off
+            sizes.addItem(it)
+        }
+        sizeItem.submenu = sizes
+        menu.addItem(sizeItem)
+
+        let grab = NSMenuItem(title: "Grab with a plain click (no Option key)", action: #selector(toggleAlwaysGrab), keyEquivalent: "")
+        grab.target = self
+        grab.state = alwaysGrab ? .on : .off
+        menu.addItem(grab)
+
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Quit Po window", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        fill(menu)
+    }
+
+    func setUpStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let menu = NSMenu()
+        menu.delegate = self
+        item.menu = menu
+        statusItem = item
+        updateStatusIcon()
+    }
+
+    /// The menu bar icon is the creature's current face, so it follows the mood.
+    func updateStatusIcon() {
+        guard let item = statusItem, let cache = view.cache, let anim = cache.animation(for: view.mood) else { return }
+        let key = "\(view.mood)/\(anim.sequence.first ?? 0)"
+        guard key != lastIcon, let image = cache.image(mood: view.mood, tick: 0) else { return }
+        lastIcon = key
+        // Drawn at half size so each pixel is one device pixel on a Retina screen.
+        let icon = NSImage(cgImage: image, size: NSSize(width: Double(image.width) / 2, height: Double(image.height) / 2))
+        icon.isTemplate = false
+        item.button?.image = icon
+        item.button?.toolTip = "Po (Control+Option+P hides or shows it)"
     }
 
     func apply(_ state: PetState) {
         if state.mood != view.mood {
             view.mood = state.mood
             view.tick = 0
+            updateStatusIcon()
         }
         if let seen = seenLineSeq {
             if state.lineSeq > seen, let line = state.line, !line.isEmpty {
@@ -304,6 +424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let cache = view.cache, let anim = cache.animation(for: view.mood), !anim.sequence.isEmpty else { return }
         view.tick += 1
         ticksSinceLog += 1
+        if panel.isVisible && (panel.frame.contains(NSEvent.mouseLocation) || targetAlpha != 1) { updateInteraction() }
         let key = "\(view.mood)/\(anim.sequence[view.tick % anim.sequence.count])"
         let bubbleActive = view.line != nil && Date().timeIntervalSince(view.lineShownAt) < PetView.lineLife + 0.3
         if key != lastFrameKey || bubbleActive {
@@ -319,19 +440,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let index = anim.sequence[view.tick % anim.sequence.count]
-        print("log: mood \(view.mood), tick \(view.tick), frame \(index) of \(anim.frames.count)\(view.line.map { ", line \"\($0)\"" } ?? "") | last second: \(ticksSinceLog) ticks, \(redrawsSinceLog) redraws, \(mouseSinceLog) mouse events")
+        print("log: mood \(view.mood), tick \(view.tick), frame \(index) of \(anim.frames.count)\(view.line.map { ", line \"\($0)\"" } ?? "") | last second: \(ticksSinceLog) ticks, \(redrawsSinceLog) redraws, \(mouseSinceLog) mouse events | pointer: \(interaction), alpha \(String(format: "%.2f", Double(targetAlpha)))")
         ticksSinceLog = 0; redrawsSinceLog = 0; mouseSinceLog = 0
     }
 
-    func updateClickThrough() {
+    /// Decides, from where the pointer is, whether the pet catches the mouse and
+    /// how solid it looks. See Interaction.
+    func updateInteraction() {
         mouseSinceLog += 1
-        guard !view.dragging else { return }
         let p = NSEvent.mouseLocation
-        var solid = false
-        if panel.frame.contains(p) {
-            solid = view.isSolid(at: view.convert(panel.convertPoint(fromScreen: p), from: nil))
+        var near = false, over = false
+        if panel.isVisible && panel.frame.contains(p) {
+            let local = view.convert(panel.convertPoint(fromScreen: p), from: nil)
+            near = view.petRect.insetBy(dx: -12, dy: -12).contains(local)
+            over = view.isSolid(at: local)
         }
-        panel.ignoresMouseEvents = !solid
+        let outcome = Interaction.decide(
+            near: near, overCreature: over,
+            optionDown: NSEvent.modifierFlags.contains(.option),
+            alwaysGrab: alwaysGrab, dragging: view.dragging)
+        interaction = outcome.grabbable ? "grabbable" : (near ? "faded, clicks pass through" : "far")
+        if panel.ignoresMouseEvents == outcome.grabbable { panel.ignoresMouseEvents = !outcome.grabbable }
+        if outcome.alpha != targetAlpha {
+            targetAlpha = outcome.alpha
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                panel.animator().alphaValue = outcome.alpha
+            }
+        }
     }
 
     // The window remembers where it was left.
@@ -434,7 +570,12 @@ func quitOnSignals() {
     }
 }
 
-if options.probe {
+if options.selftest {
+    let (passed, failures) = Interaction.selfTest()
+    failures.forEach { print("FAIL \($0)") }
+    print("selftest: \(passed) passed, \(failures.count) failed")
+    exit(failures.isEmpty ? 0 : 1)
+} else if options.probe {
     probe()
 } else if options.listen {
     listen(seconds: options.seconds ?? 10)
