@@ -206,7 +206,7 @@ const usage = `po: a mood-reactive pet for your terminal
   po stop          stop Po; it stays off until you run po start
   po status        show what Po is doing, which reader it uses and where it sends data
   po config        show or change settings (reader, model address, API key source)
-  po overlay on|off   draw the small pet in your terminals' corner, or not
+  po overlay on|off   also draw a small text pet in your terminals' corner (off by default)
   po window        show the pet as a small window on your desktop (po window stop to close)
   po window login on|off   start the window automatically at every login
   po watch         print the pet's state as it changes (what a window receives)

@@ -33,8 +33,9 @@ type Config struct {
 	IdleMinutes int
 	Theme       string
 	// Overlay is "on" to draw the small pet in the corner of each terminal, or
-	// "off" to leave the terminal text alone. The corner pet is made of text
-	// characters, so selecting text near it copies the pet too.
+	// "off" (the default) to leave the terminal text alone. The corner pet is
+	// made of text characters, so selecting text near it copies the pet too; the
+	// desktop window (po window) has no such problem.
 	Overlay string
 }
 
@@ -47,7 +48,7 @@ func Default() Config {
 		Gate:        0.6,
 		IdleMinutes: 10,
 		Theme:       "soccer",
-		Overlay:     "on",
+		Overlay:     "off",
 	}
 }
 

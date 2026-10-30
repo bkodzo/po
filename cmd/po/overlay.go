@@ -20,6 +20,8 @@ func runOverlay(args []string) {
 		fmt.Printf("the corner pet in terminals is %s\n", cfg.Overlay)
 		if cfg.Overlay == "on" {
 			fmt.Println("note: it is drawn with text characters, so copying text near it copies the pet too. `po overlay off` stops that; the desktop window (po window) has no such problem.")
+		} else {
+			fmt.Println("the desktop window is the main pet: start it with `po window`. `po overlay on` adds a small text pet in terminals.")
 		}
 		return
 	}
@@ -39,7 +41,7 @@ func runOverlay(args []string) {
 	// when it starts.
 	ipc.Send(ipc.Message{Op: "reload"})
 	if args[0] == "off" {
-		fmt.Println("the corner pet is off: nothing is drawn in your terminals any more (try po window for the desktop pet)")
+		fmt.Println("the corner pet is off: nothing is drawn in your terminals (the desktop pet is po window)")
 	} else {
 		fmt.Println("the corner pet is on: it appears again at your next prompt")
 	}

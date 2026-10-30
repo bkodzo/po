@@ -95,17 +95,17 @@ func TestReadKeyPrefersFile(t *testing.T) {
 func TestOverlaySetting(t *testing.T) {
 	use(t)
 	c := Default()
-	if c.Overlay != "on" {
-		t.Errorf("the corner pet should default to on, got %q", c.Overlay)
+	if c.Overlay != "off" {
+		t.Errorf("the corner pet should default to off (the desktop window is the main pet), got %q", c.Overlay)
 	}
-	if err := c.Set("overlay", "off"); err != nil {
+	if err := c.Set("overlay", "on"); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Save(); err != nil {
 		t.Fatal(err)
 	}
 	got, err := Load()
-	if err != nil || got.Overlay != "off" {
+	if err != nil || got.Overlay != "on" {
 		t.Errorf("did not round trip: %+v, %v", got, err)
 	}
 	if c.Set("overlay", "maybe") == nil {
