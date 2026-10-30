@@ -91,3 +91,24 @@ func TestReadKeyPrefersFile(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestOverlaySetting(t *testing.T) {
+	use(t)
+	c := Default()
+	if c.Overlay != "on" {
+		t.Errorf("the corner pet should default to on, got %q", c.Overlay)
+	}
+	if err := c.Set("overlay", "off"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load()
+	if err != nil || got.Overlay != "off" {
+		t.Errorf("did not round trip: %+v, %v", got, err)
+	}
+	if c.Set("overlay", "maybe") == nil {
+		t.Error("only on and off should be accepted")
+	}
+}

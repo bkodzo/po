@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bkodzo/po/internal/config"
 	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
@@ -56,6 +57,7 @@ type subscriber struct {
 
 // Status is what `po status` reports.
 type Status struct {
+	Overlay       bool        `json:"overlay"`
 	Mood          string      `json:"mood"`
 	Reader        string      `json:"reader"`
 	Model         *ModelState `json:"model,omitempty"`
@@ -105,6 +107,8 @@ type Daemon struct {
 
 	subs      map[*subscriber]struct{}
 	lastState State
+
+	overlayOn bool
 }
 
 // Run serves requests until a stop message arrives.
@@ -118,6 +122,8 @@ func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 		targets: map[string]*overlay.Target{},
 		queue:   make(chan mood.Event, maxQueued),
 		subs:    map[*subscriber]struct{}{},
+
+		overlayOn: st.Cfg.Overlay != "off",
 	}
 	d.exportTheme()
 	go d.worker()
@@ -159,6 +165,9 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 	case "subscribe":
 		d.subscribe(req)
 		return false
+	case "reload":
+		d.reload()
+		return false
 	}
 	if req.Cmd != nil && !req.Cmd.Ignore() {
 		d.submit(d.eventFor(*req.Cmd))
@@ -193,6 +202,7 @@ func (d *Daemon) status() Status {
 	m := string(d.pet.Mood)
 	d.mu.Unlock()
 	st := Status{
+		Overlay:       d.overlayOn,
 		Mood:          m,
 		Reader:        d.stack.Cfg.Reader,
 		Events:        d.events,
@@ -256,7 +266,25 @@ func (d *Daemon) worker() {
 	}
 }
 
+// reload re-reads the settings that can change while Po runs. Turning the
+// corner pet off clears it from every terminal straight away.
+func (d *Daemon) reload() {
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	d.overlayOn = cfg.Overlay != "off"
+	if !d.overlayOn {
+		for tty := range d.targets {
+			d.hide(tty)
+		}
+	}
+}
+
 func (d *Daemon) show(tty string) {
+	if !d.overlayOn {
+		return
+	}
 	if _, ok := d.targets[tty]; !ok {
 		t, err := overlay.Open(tty)
 		if err != nil {

@@ -32,6 +32,10 @@ type Config struct {
 	// is shut down to free memory.
 	IdleMinutes int
 	Theme       string
+	// Overlay is "on" to draw the small pet in the corner of each terminal, or
+	// "off" to leave the terminal text alone. The corner pet is made of text
+	// characters, so selecting text near it copies the pet too.
+	Overlay string
 }
 
 func Default() Config {
@@ -43,6 +47,7 @@ func Default() Config {
 		Gate:        0.6,
 		IdleMinutes: 10,
 		Theme:       "soccer",
+		Overlay:     "on",
 	}
 }
 
@@ -95,7 +100,7 @@ var readers = map[string]bool{"auto": true, "rules": true, "keyword": true, "dec
 
 // Keys lists every setting name.
 func Keys() []string {
-	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme"}
+	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme", "overlay"}
 	sort.Strings(k)
 	return k
 }
@@ -131,6 +136,11 @@ func (c *Config) Set(key, value string) error {
 		c.IdleMinutes = n
 	case "theme":
 		c.Theme = value
+	case "overlay":
+		if value != "on" && value != "off" {
+			return fmt.Errorf("overlay must be on or off, not %q", value)
+		}
+		c.Overlay = value
 	default:
 		return fmt.Errorf("unknown setting %q (known: %s)", key, strings.Join(Keys(), ", "))
 	}
@@ -157,6 +167,8 @@ func (c Config) Get(key string) (string, error) {
 		return strconv.Itoa(c.IdleMinutes), nil
 	case "theme":
 		return c.Theme, nil
+	case "overlay":
+		return c.Overlay, nil
 	}
 	return "", fmt.Errorf("unknown setting %q (known: %s)", key, strings.Join(Keys(), ", "))
 }
