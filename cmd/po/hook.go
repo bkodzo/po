@@ -66,7 +66,7 @@ func runNotify(args []string) {
 		return
 	}
 
-	msg := ipc.Message{TTY: *tty, Term: terminalName()}
+	msg := ipc.Message{TTY: *tty}
 	if text := strings.TrimSpace(strings.Join(fs.Args(), " ")); text != "" {
 		if c := (event.Command{Text: text, Exit: *status, Millis: *ms}); !c.Ignore() {
 			msg.Cmd = &c
@@ -86,22 +86,6 @@ func runNotify(args []string) {
 			return
 		}
 	}
-}
-
-// terminalName says which terminal program this shell is running in, from the
-// environment, so the pet knows how it may draw there. A terminal multiplexer
-// counts as its own terminal, because it sits between the shell and the real
-// one and would not pass images through.
-func terminalName() string {
-	switch {
-	case os.Getenv("TMUX") != "":
-		return "tmux"
-	case os.Getenv("STY") != "":
-		return "screen"
-	case os.Getenv("KITTY_WINDOW_ID") != "":
-		return "kitty"
-	}
-	return os.Getenv("TERM_PROGRAM")
 }
 
 // startDaemon launches the background pet, detached from this shell.

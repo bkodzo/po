@@ -10,7 +10,6 @@ import (
 	"github.com/bkodzo/po/internal/config"
 	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/ipc"
-	"github.com/bkodzo/po/internal/kitty"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/overlay"
 	"github.com/bkodzo/po/internal/pet"
@@ -59,7 +58,6 @@ type subscriber struct {
 // Status is what `po status` reports.
 type Status struct {
 	Overlay       bool        `json:"overlay"`
-	OverlayStyle  string      `json:"overlay_style"`
 	Mood          string      `json:"mood"`
 	Reader        string      `json:"reader"`
 	Model         *ModelState `json:"model,omitempty"`
@@ -110,9 +108,7 @@ type Daemon struct {
 	subs      map[*subscriber]struct{}
 	lastState State
 
-	overlayOn    bool
-	overlayStyle string
-	terms        map[string]string // the terminal program each tty belongs to
+	overlayOn bool
 }
 
 // Run serves requests until a stop message arrives.
@@ -127,9 +123,7 @@ func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 		queue:   make(chan mood.Event, maxQueued),
 		subs:    map[*subscriber]struct{}{},
 
-		overlayOn:    st.Cfg.Overlay != "off",
-		overlayStyle: st.Cfg.OverlayStyle,
-		terms:        map[string]string{},
+		overlayOn: st.Cfg.Overlay != "off",
 	}
 	d.exportTheme()
 	go d.worker()
@@ -179,7 +173,7 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 		d.submit(d.eventFor(*req.Cmd))
 	}
 	if req.TTY != "" {
-		d.show(req.TTY, req.Term)
+		d.show(req.TTY)
 	}
 	return false
 }
@@ -209,7 +203,6 @@ func (d *Daemon) status() Status {
 	d.mu.Unlock()
 	st := Status{
 		Overlay:       d.overlayOn,
-		OverlayStyle:  d.overlayStyle,
 		Mood:          m,
 		Reader:        d.stack.Cfg.Reader,
 		Events:        d.events,
@@ -281,40 +274,19 @@ func (d *Daemon) reload() {
 		return
 	}
 	d.overlayOn = cfg.Overlay != "off"
-	d.overlayStyle = cfg.OverlayStyle
-	// Redraw every terminal that is showing the pet, so a change of style is
-	// seen straight away. If the pet is off this just clears them.
-	for tty := range d.targets {
-		term := d.terms[tty]
-		d.hide(tty)
-		if d.overlayOn {
-			d.show(tty, term)
+	if !d.overlayOn {
+		for tty := range d.targets {
+			d.hide(tty)
 		}
 	}
 }
 
-// modeFor decides how to draw in a terminal: as an image where the terminal
-// can show one and the settings ask for it, otherwise as text.
-func (d *Daemon) modeFor(term string) overlay.Mode {
-	if d.overlayStyle != "text" && kitty.Supported(term) {
-		return overlay.Image
-	}
-	return overlay.Text
-}
-
-func (d *Daemon) show(tty, term string) {
+func (d *Daemon) show(tty string) {
 	if !d.overlayOn {
 		return
 	}
-	d.terms[tty] = term
-	mode := d.modeFor(term)
-	if t, ok := d.targets[tty]; ok && t.Mode() != mode {
-		d.hide(tty)
-	}
-	if t, ok := d.targets[tty]; ok {
-		t.Refresh() // a new prompt: pictures sent earlier may have been cleared
-	} else {
-		t, err := overlay.Open(tty, mode)
+	if _, ok := d.targets[tty]; !ok {
+		t, err := overlay.Open(tty)
 		if err != nil {
 			return
 		}
@@ -328,7 +300,6 @@ func (d *Daemon) hide(tty string) {
 		t.Close()
 		delete(d.targets, tty)
 	}
-	delete(d.terms, tty)
 }
 
 func (d *Daemon) redraw() {
@@ -421,14 +392,8 @@ func (d *Daemon) draw(tty string) {
 	d.mu.Unlock()
 
 	canvas, pal := d.th.MiniFrame(m, d.tick)
-	t := d.targets[tty]
-	var err error
-	if t.Mode() == overlay.Image {
-		err = t.DrawImage(string(m)+":"+canvas.Letters(), canvas, pal, theme.MiniW, theme.MiniRows)
-	} else {
-		err = t.Draw(strings.Split(canvas.Render(pal), "\n"), theme.MiniW)
-	}
-	if err != nil {
+	rows := strings.Split(canvas.Render(pal), "\n")
+	if err := d.targets[tty].Draw(rows, theme.MiniW); err != nil {
 		// The terminal is gone, so forget it.
 		d.targets[tty].Close()
 		delete(d.targets, tty)

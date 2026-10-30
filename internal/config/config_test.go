@@ -112,19 +112,3 @@ func TestOverlaySetting(t *testing.T) {
 		t.Error("only on and off should be accepted")
 	}
 }
-
-func TestOverlayStyleSetting(t *testing.T) {
-	use(t)
-	c := Default()
-	if c.OverlayStyle != "text" {
-		t.Errorf("the experimental image style must be opt-in, default is %q", c.OverlayStyle)
-	}
-	for _, v := range []string{"text", "image", "auto"} {
-		if err := c.Set("overlay_style", v); err != nil {
-			t.Errorf("%s rejected: %v", v, err)
-		}
-	}
-	if c.Set("overlay_style", "sixel") == nil {
-		t.Error("unknown styles should be rejected")
-	}
-}

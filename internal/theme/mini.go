@@ -12,8 +12,6 @@ const (
 	miniH = 4
 	// MiniFps is the animation rate the mini frames are designed for.
 	MiniFps = 4
-	// MiniRows is its height in terminal rows.
-	MiniRows = 2
 )
 
 // MiniFrame draws the small corner version of the creature: 8 by 4 pixels, so
