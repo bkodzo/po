@@ -36,18 +36,24 @@ type Config struct {
 	// "off" to leave the terminal text alone. The corner pet is made of text
 	// characters, so selecting text near it copies the pet too.
 	Overlay string
+	// OverlayStyle is how the corner pet is drawn. "text" uses block characters
+	// that work in any terminal but are copied along with nearby text; "image"
+	// draws a real image (Kitty graphics) that is not part of the text, on
+	// terminals that support it; "auto" picks image where it is supported.
+	OverlayStyle string
 }
 
 func Default() Config {
 	return Config{
-		Reader:      "auto",
-		URL:         "http://127.0.0.1:8080",
-		Model:       "clef-flash",
-		KeyEnv:      "PO_API_KEY",
-		Gate:        0.6,
-		IdleMinutes: 10,
-		Theme:       "soccer",
-		Overlay:     "on",
+		Reader:       "auto",
+		URL:          "http://127.0.0.1:8080",
+		Model:        "clef-flash",
+		KeyEnv:       "PO_API_KEY",
+		Gate:         0.6,
+		IdleMinutes:  10,
+		Theme:        "soccer",
+		Overlay:      "on",
+		OverlayStyle: "text",
 	}
 }
 
@@ -100,7 +106,7 @@ var readers = map[string]bool{"auto": true, "rules": true, "keyword": true, "dec
 
 // Keys lists every setting name.
 func Keys() []string {
-	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme", "overlay"}
+	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme", "overlay", "overlay_style"}
 	sort.Strings(k)
 	return k
 }
@@ -136,6 +142,11 @@ func (c *Config) Set(key, value string) error {
 		c.IdleMinutes = n
 	case "theme":
 		c.Theme = value
+	case "overlay_style":
+		if value != "text" && value != "image" && value != "auto" {
+			return fmt.Errorf("overlay_style must be text, image or auto, not %q", value)
+		}
+		c.OverlayStyle = value
 	case "overlay":
 		if value != "on" && value != "off" {
 			return fmt.Errorf("overlay must be on or off, not %q", value)
@@ -169,6 +180,8 @@ func (c Config) Get(key string) (string, error) {
 		return c.Theme, nil
 	case "overlay":
 		return c.Overlay, nil
+	case "overlay_style":
+		return c.OverlayStyle, nil
 	}
 	return "", fmt.Errorf("unknown setting %q (known: %s)", key, strings.Join(Keys(), ", "))
 }
