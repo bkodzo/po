@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -17,10 +18,16 @@ import (
 	"github.com/bkodzo/po/internal/theme"
 )
 
+// version is set at build time for a release (-ldflags "-X main.version=...").
+var version = "dev"
+
 func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "version", "--version", "-v":
+			fmt.Printf("po %s (%s %s/%s)\n", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+			return
 		case "notify":
 			runNotify(args[1:])
 			return

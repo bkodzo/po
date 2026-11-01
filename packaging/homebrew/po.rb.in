@@ -1,0 +1,33 @@
+class Po < Formula
+  desc "A small pet that reacts to how your work is going"
+  homepage "https://github.com/bkodzo/po"
+  version "@VERSION@"
+
+  depends_on macos: :ventura
+
+  on_arm do
+    url "@BASE@/po-v@VERSION@-darwin-arm64.tar.gz"
+    sha256 "@SHA_ARM64@"
+  end
+
+  on_intel do
+    url "@BASE@/po-v@VERSION@-darwin-amd64.tar.gz"
+    sha256 "@SHA_AMD64@"
+  end
+
+  def install
+    bin.install "po", "po-view", "po-window"
+  end
+
+  def caveats
+    <<~EOS
+      Set Po up (it explains what it changes and asks first):
+        po init
+    EOS
+  end
+
+  test do
+    assert_match "po v#{version}", shell_output("#{bin}/po version")
+    assert_match "selftest", shell_output("#{bin}/po-window --selftest")
+  end
+end
