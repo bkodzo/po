@@ -81,7 +81,9 @@ func TestStartsOnDemandAndStopsWhenIdle(t *testing.T) {
 
 func TestUseKeepsTheServerAlive(t *testing.T) {
 	bin, model, port := fakeServer(t)
-	s, _ := New(bin, model, "http://127.0.0.1:"+port, "", 700*time.Millisecond)
+	// The idle limit is generous because a slow machine can take a few hundred
+	// milliseconds per health check, and that must not look like being idle.
+	s, _ := New(bin, model, "http://127.0.0.1:"+port, "", 2*time.Second)
 	s.CheckEvery = 100 * time.Millisecond
 	defer s.Stop()
 	s.Use()
@@ -89,7 +91,8 @@ func TestUseKeepsTheServerAlive(t *testing.T) {
 	stop := make(chan struct{})
 	defer close(stop)
 	go s.Watch(stop)
-	for i := 0; i < 15; i++ { // 1.5s of regular use, longer than the idle limit
+	started := time.Now()
+	for time.Since(started) < 3*time.Second { // regular use for longer than the idle limit
 		s.Use()
 		time.Sleep(100 * time.Millisecond)
 	}
