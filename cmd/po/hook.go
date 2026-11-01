@@ -121,29 +121,40 @@ func stopped() bool {
 	return err == nil
 }
 
-func runStop() {
+// stopPo stops Po and keeps it off until `po start`.
+func stopPo() string {
 	if path, err := offFile(); err == nil {
 		os.MkdirAll(filepath.Dir(path), 0o755)
 		os.WriteFile(path, nil, 0o644)
 	}
 	if err := ipc.Send(ipc.Message{Op: "stop"}); err != nil {
-		fmt.Println("po is not running (it stays off until you run `po start`)")
-		return
+		return "po is not running (it stays off until you run `po start`)"
 	}
-	fmt.Println("po stopped (run `po start` to bring it back)")
+	return "po stopped (run `po start` to bring it back)"
 }
 
-func runStart() {
+func runStop() { fmt.Println(stopPo()) }
+
+// startPo clears the "stopped on purpose" flag and starts Po in the background
+// if it is not already running.
+func startPo() (string, error) {
 	if path, err := offFile(); err == nil {
 		os.Remove(path)
 	}
 	if ipc.Send(ipc.Message{Op: "ping"}) == nil {
-		fmt.Println("po is already running")
-		return
+		return "po is already running", nil
 	}
 	if err := startDaemon(); err != nil {
+		return "", err
+	}
+	return "po started; it appears at your next prompt", nil
+}
+
+func runStart() {
+	msg, err := startPo()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "po:", err)
 		os.Exit(1)
 	}
-	fmt.Println("po started; it appears at your next prompt")
+	fmt.Println(msg)
 }

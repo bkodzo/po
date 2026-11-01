@@ -51,6 +51,9 @@ func main() {
 		case "idle":
 			runIdle(args[1:])
 			return
+		case "init":
+			runInit(args[1:])
+			return
 		case "theme":
 			runTheme(args[1:])
 			return
@@ -183,11 +186,6 @@ func show(p *pet.Pet, line string) {
 	fmt.Printf("[%s] %s\n", p.Mood, line)
 }
 
-func isTerminal(f *os.File) bool {
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
 // gallery prints one representative frame for every mood.
 func gallery(th theme.Theme, letters bool) {
 	ticks := map[mood.Mood]int{mood.Celebrating: 3, mood.Frustrated: 1, mood.Tired: 9}
@@ -204,6 +202,7 @@ func gallery(th theme.Theme, letters bool) {
 
 const usage = `po: a mood-reactive pet for your terminal
 
+  po init          set Po up: add the shell hook (asks first), start Po (po init --undo reverses it)
   po hook zsh      print the shell hook; add  eval "$(po hook zsh)"  to ~/.zshrc
   po start         start Po in the background (the hook also does this)
   po stop          stop Po; it stays off until you run po start
