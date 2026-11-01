@@ -5,21 +5,37 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 )
 
 // runInit handles `po init [--yes] [--undo]`.
 func runInit(args []string) {
-	yes, undo := false, false
-	for _, a := range args {
-		switch a {
+	yes, undo, shell := false, false, ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--yes", "-y":
 			yes = true
 		case "--undo":
 			undo = true
+		case "--shell":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "usage: po init [--yes] [--undo] [--shell zsh|bash|fish]")
+				os.Exit(2)
+			}
+			shell = args[i+1]
+			i++
 		default:
-			fmt.Fprintln(os.Stderr, "usage: po init [--yes] [--undo]")
+			fmt.Fprintln(os.Stderr, "usage: po init [--yes] [--undo] [--shell zsh|bash|fish]")
 			os.Exit(2)
 		}
+	}
+	if shell == "" {
+		shell = filepath.Base(os.Getenv("SHELL"))
+	}
+	if _, ok := hookScript(shell); !ok {
+		fmt.Printf("Your shell is %q. Po can watch zsh, bash and fish. Choose one with: po init --shell zsh|bash|fish\n", shell)
+		fmt.Println("Nothing was changed.")
+		return
 	}
 
 	exe, _ := os.Executable()
@@ -30,7 +46,9 @@ func runInit(args []string) {
 	env := initEnv{
 		in:          os.Stdin,
 		out:         os.Stdout,
-		rcPath:      zshrcPath(),
+		rcPath:      rcPathFor(shell, home),
+		shell:       shell,
+		ownFile:     shell == "fish",
 		home:        home,
 		exeDir:      filepath.Dir(exe),
 		onPath:      func() bool { _, err := exec.LookPath("po"); return err == nil },
@@ -52,12 +70,6 @@ func runInit(args []string) {
 		},
 	}
 
-	if filepath.Base(os.Getenv("SHELL")) != "zsh" && os.Getenv("ZDOTDIR") == "" {
-		fmt.Printf("Your shell is %s. Po's hook supports zsh only for now, so Po would not see your commands.\n", os.Getenv("SHELL"))
-		fmt.Println("Nothing was changed.")
-		return
-	}
-
 	var err error
 	if undo {
 		err = undoInit(env)
@@ -68,4 +80,15 @@ func runInit(args []string) {
 		fmt.Fprintln(os.Stderr, "po:", err)
 		os.Exit(1)
 	}
+}
+
+// rcPathFor is the startup file Po's hook goes in for a shell.
+func rcPathFor(shell, home string) string {
+	switch shell {
+	case "bash":
+		return bashRcPath(home, runtime.GOOS, func(p string) bool { _, err := os.Stat(p); return err == nil })
+	case "fish":
+		return fishConfPath(home, os.Getenv("XDG_CONFIG_HOME"))
+	}
+	return zshrcPath()
 }

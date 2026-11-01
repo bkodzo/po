@@ -365,3 +365,109 @@ func TestEnterAloneTakesTheDefault(t *testing.T) {
 		t.Error("pressing Enter should accept the default of yes for the main change")
 	}
 }
+
+func TestBashStartupFileIsChosenSafely(t *testing.T) {
+	has := func(files ...string) func(string) bool {
+		return func(p string) bool {
+			for _, f := range files {
+				if p == filepath.Join("/h", f) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	for name, tc := range map[string]struct {
+		goos  string
+		files []string
+		want  string
+	}{
+		"mac, a .bash_profile exists": {"darwin", []string{".bash_profile", ".bashrc"}, "/h/.bash_profile"},
+		"mac, only a .profile exists": {"darwin", []string{".profile"}, "/h/.profile"}, // a new .bash_profile would hide it
+		"mac, only a .bashrc exists":  {"darwin", []string{".bashrc"}, "/h/.bash_profile"},
+		"mac, nothing exists":         {"darwin", nil, "/h/.bash_profile"},
+		"linux uses .bashrc":          {"linux", []string{".bash_profile"}, "/h/.bashrc"},
+		"linux with nothing":          {"linux", nil, "/h/.bashrc"},
+	} {
+		if got := bashRcPath("/h", tc.goos, has(tc.files...)); got != tc.want {
+			t.Errorf("%s: %s, want %s", name, got, tc.want)
+		}
+	}
+}
+
+func TestFishHookGoesInItsOwnFile(t *testing.T) {
+	if got := fishConfPath("/h", ""); got != "/h/.config/fish/conf.d/po.fish" {
+		t.Errorf("default: %s", got)
+	}
+	if got := fishConfPath("/h", "/x"); got != "/x/fish/conf.d/po.fish" {
+		t.Errorf("with XDG_CONFIG_HOME: %s", got)
+	}
+}
+
+func TestEveryShellsHookLineIsRecognisedAsAHook(t *testing.T) {
+	for _, sh := range []string{"zsh", "bash", "fish"} {
+		if !hasHook("export A=1\n" + hookLineFor(sh) + "\n") {
+			t.Errorf("the %s hook line is not recognised", sh)
+		}
+		if hasHook("# " + hookLineFor(sh) + "\n") {
+			t.Errorf("a commented-out %s hook counted", sh)
+		}
+	}
+	if hasHook("export PATH=$PATH:/usr/local/bin\n") {
+		t.Error("an unrelated line counted as a hook")
+	}
+}
+
+func TestInitForBashAddsTheBashHookNotTheZshOne(t *testing.T) {
+	rc := rcFile(t, "export A=1\n")
+	e, _, _ := env(t, rc, "y\nn\n", true, false)
+	e.shell = "bash"
+	if err := runInitWith(e); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, rc)
+	if !strings.Contains(got, `eval "$(po hook bash)"`) || strings.Contains(got, "po hook zsh") {
+		t.Errorf("wrong hook:\n%s", got)
+	}
+}
+
+func TestInitForFishWritesItsOwnFileAndUndoRemovesIt(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "fish", "conf.d", "po.fish") // the folder does not exist yet
+	e, _, _ := env(t, rc, "y\nn\n", true, false)
+	e.shell, e.ownFile = "fish", true
+	e.onPath = func() bool { return false }
+	if err := runInitWith(e); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, rc)
+	if !strings.Contains(got, "po hook fish | source") || !strings.Contains(got, `fish_add_path "$HOME/go/bin"`) {
+		t.Errorf("fish setup wrong (it needs fish's own PATH syntax, not export):\n%s", got)
+	}
+	if strings.Contains(got, "export PATH") {
+		t.Error("export is not fish syntax")
+	}
+	e2, steps, out := env(t, rc, "", false, false)
+	e2.shell, e2.ownFile = "fish", true
+	if err := undoInit(e2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(rc); err == nil {
+		t.Error("a file that held only Po's setup should be deleted by undo")
+	}
+	if steps.stopped != 1 || !strings.Contains(out.String(), "held only Po's setup") {
+		t.Errorf("undo output:\n%s", out)
+	}
+}
+
+func TestUndoKeepsAFishFileThatHoldsOtherThings(t *testing.T) {
+	rc := rcFile(t, "set -x EDITOR vim\n")
+	e, _, _ := env(t, rc, "y\nn\n", true, false)
+	e.shell, e.ownFile = "fish", true
+	runInitWith(e)
+	e2, _, _ := env(t, rc, "", false, false)
+	e2.shell, e2.ownFile = "fish", true
+	undoInit(e2)
+	if got := read(t, rc); got != "set -x EDITOR vim\n" {
+		t.Errorf("the user's own lines must survive undo, got %q", got)
+	}
+}

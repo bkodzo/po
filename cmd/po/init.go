@@ -31,11 +31,60 @@ func zshrcPath() string {
 func hasHook(content string) bool {
 	for _, line := range strings.Split(content, "\n") {
 		t := strings.TrimSpace(line)
-		if !strings.HasPrefix(t, "#") && strings.Contains(t, "po hook zsh") {
-			return true
+		if strings.HasPrefix(t, "#") {
+			continue
+		}
+		for _, sh := range []string{"zsh", "bash", "fish"} {
+			if strings.Contains(t, "po hook "+sh) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// hookLineFor is the line that loads Po's hook in a shell.
+func hookLineFor(shell string) string {
+	switch shell {
+	case "bash":
+		return `eval "$(po hook bash)"`
+	case "fish":
+		return `po hook fish | source`
+	}
+	return hookLine
+}
+
+// pathLineFor puts dir on the PATH in a shell's own syntax.
+func pathLineFor(shell, dir, home string) string {
+	if shell == "fish" {
+		return fmt.Sprintf(`fish_add_path "%s"`, strings.Replace(dir, home, "$HOME", 1))
+	}
+	return pathExport(dir, home)
+}
+
+// bashRcPath chooses the file a bash user's startup code belongs in. On a Mac a
+// login shell reads ~/.bash_profile, or failing that ~/.profile, and not
+// ~/.bashrc. Creating a .bash_profile where only a .profile exists would stop
+// that .profile from being read, so an existing file is always preferred.
+func bashRcPath(home, goos string, exists func(string) bool) string {
+	if goos != "darwin" {
+		return filepath.Join(home, ".bashrc")
+	}
+	for _, name := range []string{".bash_profile", ".profile"} {
+		if exists(filepath.Join(home, name)) {
+			return filepath.Join(home, name)
+		}
+	}
+	return filepath.Join(home, ".bash_profile")
+}
+
+// fishConfPath is fish's own folder of startup snippets, which keeps Po's hook
+// in a file of its own.
+func fishConfPath(home, xdg string) string {
+	if xdg == "" {
+		xdg = filepath.Join(home, ".config")
+	}
+	return filepath.Join(xdg, "fish", "conf.d", "po.fish")
 }
 
 // pathExport is the line that puts dir on the PATH, written with $HOME where
@@ -113,6 +162,8 @@ type initEnv struct {
 	rcPath      string
 	home        string
 	exeDir      string // the folder this program is in
+	shell       string // zsh (the default), bash or fish
+	ownFile     bool   // the file is Po's alone, so undo can delete it
 	onPath      func() bool
 	interactive bool
 	yes         bool
@@ -165,8 +216,13 @@ func runInitWith(e initEnv) error {
 	}
 	content := string(data)
 
+	shell := e.shell
+	if shell == "" {
+		shell = "zsh"
+	}
+	hook := hookLineFor(shell)
 	needHook := !hasHook(content)
-	pathLine := pathExport(e.exeDir, e.home)
+	pathLine := pathLineFor(shell, e.exeDir, e.home)
 	needPath := !e.onPath() && !hasPathExport(content, pathLine)
 
 	fmt.Fprintln(out, "Po setup")
@@ -179,7 +235,7 @@ func runInitWith(e initEnv) error {
 			fmt.Fprintf(out, "    %s\n", pathLine)
 		}
 		if needHook {
-			fmt.Fprintf(out, "    %s\n", hookLine)
+			fmt.Fprintf(out, "    %s\n", hook)
 		}
 		fmt.Fprintln(out)
 	}
@@ -204,7 +260,7 @@ func runInitWith(e initEnv) error {
 			content = withBlock(content, pathMarker, pathLine)
 		}
 		if needHook {
-			content = withBlock(content, hookMarker, hookLine)
+			content = withBlock(content, hookMarker, hook)
 		}
 		if err := writeKeepingMode(e.rcPath, content); err != nil {
 			return err
@@ -243,7 +299,7 @@ func runInitWith(e initEnv) error {
 	}
 
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Open a new terminal tab to start using it. Po reacts to your commands from the next prompt.")
+	fmt.Fprintf(out, "Open a new terminal tab to start using it (%s). Po reacts to your commands from the next prompt.\n", shell)
 	fmt.Fprintln(out, "It works with no model at all. To use one, see: po config")
 	fmt.Fprintln(out, "To undo everything this did: po init --undo")
 	return nil
@@ -268,10 +324,17 @@ func undoInit(e initEnv) error {
 		if _, err := backupOnce(e.rcPath, ".po-undo-backup"); err != nil {
 			return err
 		}
-		if err := writeKeepingMode(e.rcPath, content); err != nil {
-			return err
+		if e.ownFile && strings.TrimSpace(content) == "" {
+			if err := os.Remove(e.rcPath); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "Removed %s, which held only Po's setup.\n", e.rcPath)
+		} else {
+			if err := writeKeepingMode(e.rcPath, content); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "Removed %s from %s.\n", strings.Join(removed, " and "), e.rcPath)
 		}
-		fmt.Fprintf(out, "Removed %s from %s.\n", strings.Join(removed, " and "), e.rcPath)
 	} else if hasHook(content) {
 		fmt.Fprintf(out, "%s loads the Po hook, but not from a block po init added, so I left it alone. Delete that line yourself to remove it.\n", e.rcPath)
 	} else {
