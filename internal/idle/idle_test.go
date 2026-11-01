@@ -42,7 +42,7 @@ func TestACalmCreatureFidgetsNowAndThenButNotConstantly(t *testing.T) {
 	for minute := 0; minute < 10; minute++ {
 		got := run(s, start.Add(time.Duration(minute)*time.Minute), 60, start.Add(time.Duration(minute)*time.Minute), mood.Calm)
 		for name, n := range got {
-			if name != "look" && name != "stretch" {
+			if name != "look" && name != "stretch" && name != "peek" {
 				t.Fatalf("unexpected activity %q", name)
 			}
 			total += n
@@ -136,7 +136,7 @@ func TestSwitchedOffMeansSilence(t *testing.T) {
 	}
 }
 
-func TestBothFidgetsAreChosen(t *testing.T) {
+func TestEveryFidgetIsChosenSometimes(t *testing.T) {
 	seen := map[string]bool{}
 	for seed := int64(1); seed <= 30; seed++ {
 		s := New(DefaultConfig(), rand.New(rand.NewSource(seed)), start)
@@ -144,7 +144,7 @@ func TestBothFidgetsAreChosen(t *testing.T) {
 			seen[name] = true
 		}
 	}
-	if !seen["look"] || !seen["stretch"] {
+	if !seen["look"] || !seen["stretch"] || !seen["peek"] {
 		t.Errorf("only saw %v", seen)
 	}
 }

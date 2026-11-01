@@ -20,6 +20,9 @@ var activities = map[string]ActivityInfo{
 	"stretch": {Ticks: 24},
 	"sleep":   {Ticks: 32, Loop: true},
 	"wake":    {Ticks: 10},
+	// peek is a long, curious glance. The window slides partly off a screen edge
+	// while it plays, if the creature is next to one.
+	"peek": {Ticks: 48},
 }
 
 // ActivityNames lists every idle animation, in a stable order.
@@ -71,6 +74,18 @@ func activityPose(name string, t int) pose {
 			gaze = 1
 		}
 		return pose{eyes: "open", gaze: gaze, mouth: "smile", arms: "down", cheeks: true}
+
+	case "peek":
+		// Glances in turn toward each side, with a small curious mouth, and
+		// keeps its eyes on the middle at the start and end.
+		gaze := 0
+		switch {
+		case t >= 8 && t < 16, t >= 28 && t < 34:
+			gaze = -1
+		case t >= 18 && t < 26, t >= 36 && t < 42:
+			gaze = 1
+		}
+		return pose{eyes: "open", gaze: gaze, mouth: "flat", arms: "down"}
 
 	case "stretch":
 		p := pose{eyes: "closed", mouth: "yawn", arms: "up", cheeks: true}

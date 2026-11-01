@@ -51,7 +51,7 @@ func (s *Scheduler) gap(lo, hi time.Duration) time.Duration {
 var weights = []struct {
 	name   string
 	weight int
-}{{"look", 5}, {"stretch", 3}}
+}{{"look", 5}, {"stretch", 3}, {"peek", 2}}
 
 // Pick says which activity to start now, or "" for none.
 //

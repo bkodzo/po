@@ -73,6 +73,7 @@ final class PetView: NSView {
     var lineShownAt = Date.distantPast
     var dragging = false
     var onDragEnd: (() -> Void)?
+    var onDragStart: (() -> Void)?
 
     var scale: Int
     var menuProvider: (() -> NSMenu)?
@@ -156,6 +157,7 @@ final class PetView: NSView {
     // Dragging: the window follows the pointer, and snaps to an edge on release.
 
     override func mouseDown(with event: NSEvent) {
+        onDragStart?()
         dragging = true
         window?.ignoresMouseEvents = false
         grabOffset = event.locationInWindow
@@ -213,6 +215,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var userHidden = false
     var alwaysGrab = UserDefaults.standard.bool(forKey: "alwaysGrab")
     var targetAlpha: CGFloat = 1
+    /// Where the window was before a peek, so it can go back.
+    var peekHome: NSPoint?
     var statusItem: NSStatusItem?
     var hotKey: HotKey?
     var lastIcon = ""
@@ -226,6 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let saved = UserDefaults.standard.integer(forKey: "scale")
         view = PetView(scale: options.scaleGiven ? options.scale : (saved > 0 ? saved : options.scale))
         view.onDragEnd = { [weak self] in self?.savePosition() }
+        view.onDragStart = { [weak self] in self?.endPeek(animated: false) }
         view.menuProvider = { [weak self] in self?.makeMenu() ?? NSMenu() }
 
         panel = NSPanel(
@@ -315,6 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// The pet shows while Po is there and the person has not hidden it.
     func refreshVisibility() {
+        if !connected || userHidden { endPeek(animated: false) }
         if connected && !userHidden {
             panel.orderFrontRegardless()
         } else {
@@ -436,14 +442,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applyActivity(_ state: PetState) {
         guard let name = state.activity, !name.isEmpty else {
             if view.activity != nil { view.activity = nil; view.needsDisplay = true }
+            endPeek()
             return
         }
         let seq = state.activitySeq ?? 0
         guard seq != playedActivitySeq, view.cache?.activityLength(name) != nil else { return }
         playedActivitySeq = seq
+        endPeek(animated: false) // a different animation replaces a peek
         view.activity = name
         view.activityTick = 0
         view.needsDisplay = true
+        if name == "peek" { startPeek() }
+    }
+
+    // MARK: Peeking
+
+    /// Slides the window so the creature hangs partly off the nearest screen
+    /// edge, if it is next to one. Otherwise the pet just glances around.
+    func startPeek() {
+        guard peekHome == nil, panel.isVisible, !view.dragging,
+              let screen = panel.screen ?? NSScreen.main else { return }
+        let creature = view.petRect.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
+        guard let offset = Peek.offset(creature: creature, screen: screen.frame) else { return }
+        let home = panel.frame.origin
+        peekHome = home
+        move(to: NSPoint(x: home.x + offset.x, y: home.y + offset.y), over: 0.7)
+    }
+
+    func endPeek(animated: Bool = true) {
+        guard let home = peekHome else { return }
+        peekHome = nil
+        move(to: home, over: animated ? 0.6 : 0)
+    }
+
+    func move(to origin: NSPoint, over seconds: TimeInterval) {
+        let frame = NSRect(origin: origin, size: panel.frame.size)
+        guard seconds > 0 else {
+            panel.setFrame(frame, display: true)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = seconds
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        }
     }
 
     /// Moves the animation on one tick, and only redraws if what is on screen
@@ -457,6 +499,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var key: String
         if let name = view.activity, let length = cache.activityLength(name) {
             view.activityTick += 1
+            if name == "peek" && view.activityTick == length.ticks - 6 { endPeek() }
             if !length.loop && view.activityTick >= length.ticks {
                 view.activity = nil // a one-off has finished; back to the mood's loop
                 key = "\(view.mood)/\(anim.sequence[view.tick % anim.sequence.count])"
@@ -612,7 +655,9 @@ func quitOnSignals() {
 }
 
 if options.selftest {
-    let (passed, failures) = Interaction.selfTest()
+    let (p1, f1) = Interaction.selfTest()
+    let (p2, f2) = Peek.selfTest()
+    let (passed, failures) = (p1 + p2, f1 + f2)
     failures.forEach { print("FAIL \($0)") }
     print("selftest: \(passed) passed, \(failures.count) failed")
     exit(failures.isEmpty ? 0 : 1)
