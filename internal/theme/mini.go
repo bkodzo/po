@@ -17,6 +17,9 @@ const (
 // MiniFrame draws the small corner version of the creature: 8 by 4 pixels, so
 // two terminal rows. The mood shows mostly in colour and movement.
 func (t Theme) MiniFrame(m mood.Mood, tick int) (*sprite.Canvas, sprite.Palette) {
+	if t.data != nil {
+		return t.dataFrame(m, tick, true)
+	}
 	c := sprite.NewCanvas(MiniW, miniH)
 	dx, dy := 0, 1
 	eyes, mouth := 'k', "flat"

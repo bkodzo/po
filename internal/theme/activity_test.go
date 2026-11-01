@@ -103,7 +103,7 @@ func TestExportIncludesTheActivities(t *testing.T) {
 		}
 		// The pack's picture is the drawing's picture.
 		c, _ := Soccer.ActivityFrame(name, 3)
-		if a.Frames[a.Sequence[3]] != strings.ReplaceAll(c.Letters(), "\n", "") {
+		if string(a.Frames[a.Sequence[3]]) != strings.ReplaceAll(c.Letters(), "\n", "") {
 			t.Errorf("%s tick 3 differs between the pack and the drawing", name)
 		}
 	}

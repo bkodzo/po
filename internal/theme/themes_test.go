@@ -175,7 +175,7 @@ func TestEveryThemeExportsAndTheExportMatchesTheDrawing(t *testing.T) {
 			}
 			c, _ := th.Frame(m, 7)
 			want := strings.ReplaceAll(c.Letters(), "\n", "")
-			if got := mp.Full.Frames[mp.Full.Sequence[7%len(mp.Full.Sequence)]]; got != want {
+			if got := string(mp.Full.Frames[mp.Full.Sequence[7%len(mp.Full.Sequence)]]); got != want {
 				t.Errorf("%s: the pack's frame 7 differs from the drawing", m)
 			}
 		}

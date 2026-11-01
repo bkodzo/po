@@ -228,7 +228,8 @@ const usage = `po: a mood-reactive pet for your terminal
   po forget        delete everything Po remembers about your days
   po idle <name>   play an idle animation now (look, stretch, sleep, wake)
   po watch         print the pet's state as it changes (what a window receives)
-  po theme list|set <name>   choose the character (soccer, ghost, cat)
+  po theme list|set <name>   choose the character (soccer, ghost, cat, and any you install)
+  po theme new|validate|install|remove   make your own character from a file
   po theme export  write the theme as data for a window to play
   po gallery       show every mood
   po compare       compare the keyword reader with the model (lines from stdin)

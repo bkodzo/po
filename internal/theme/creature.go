@@ -30,6 +30,9 @@ type pose struct {
 
 // Frame draws the creature for a mood at a point in its animation.
 func (t Theme) Frame(m mood.Mood, tick int) (*sprite.Canvas, sprite.Palette) {
+	if t.data != nil {
+		return t.dataFrame(m, tick, false)
+	}
 	p := poseFor(m, tick)
 	c := sprite.NewCanvas(CanvasW, CanvasH)
 
@@ -41,6 +44,9 @@ func (t Theme) Frame(m mood.Mood, tick int) (*sprite.Canvas, sprite.Palette) {
 }
 
 func (t Theme) paletteFor(m mood.Mood) sprite.Palette {
+	if t.data != nil {
+		return palFrom(t.data.Moods[string(m)].Palette)
+	}
 	pal := make(sprite.Palette, len(t.Palette))
 	for k, v := range t.Palette {
 		pal[k] = v

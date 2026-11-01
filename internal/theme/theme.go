@@ -23,6 +23,10 @@ type Theme struct {
 	Milestones map[string][]string
 	// Recaps are one-line verdicts on a week, by tone: quiet, rough, steady, great.
 	Recaps map[string][]string
+
+	// data is set for a theme loaded from a full pack: its pictures come from
+	// the file instead of from drawing code.
+	data *Pack
 }
 
 // Tint moves the body colour part of the way toward a colour. Colours far from
@@ -49,9 +53,17 @@ func pick(lines []string) string {
 
 var themes = map[string]Theme{"soccer": Soccer, "ghost": Ghost, "cat": Cat}
 
+// Get finds a theme: a built-in character, or one installed from a file.
 func Get(name string) (Theme, bool) {
-	t, ok := themes[name]
-	return t, ok
+	if t, ok := themes[name]; ok {
+		return t, true
+	}
+	if path, ok := userPath(name); ok {
+		if t, err := LoadFile(path); err == nil {
+			return t, true
+		}
+	}
+	return Theme{}, false
 }
 
 // Names lists the available themes in a stable order.
@@ -60,6 +72,7 @@ func Names() []string {
 	for n := range themes {
 		names = append(names, n)
 	}
+	names = append(names, Installed()...)
 	sort.Strings(names)
 	return names
 }

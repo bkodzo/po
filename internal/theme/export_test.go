@@ -61,7 +61,7 @@ func TestExportMatchesTheDrawing(t *testing.T) {
 		for _, row := range splitRows(c.Letters()) {
 			want += row
 		}
-		if got := a.Frames[a.Sequence[5%len(a.Sequence)]]; got != want {
+		if got := string(a.Frames[a.Sequence[5%len(a.Sequence)]]); got != want {
 			t.Errorf("%s: frame 5 of the pack differs from the drawing", m)
 		}
 		if len(mp.Palette) == 0 {

@@ -438,7 +438,7 @@ func (d *Daemon) setActivity(name string) {
 	if name == "" {
 		return
 	}
-	info, ok := theme.ActivityOf(name)
+	info, ok := d.currentTheme().ActivityInfo(name)
 	if !ok {
 		d.activity = ""
 		return
@@ -450,7 +450,7 @@ func (d *Daemon) setActivity(name string) {
 
 // playActivity plays an idle animation on request, for `po idle <name>`.
 func (d *Daemon) playActivity(name string) {
-	if _, ok := theme.ActivityOf(name); ok {
+	if _, ok := d.currentTheme().ActivityInfo(name); ok {
 		d.setActivity(name)
 	}
 }

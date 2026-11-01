@@ -44,6 +44,9 @@ func ActivityOf(name string) (ActivityInfo, bool) {
 // ActivityFrame draws one tick of an idle animation. Activities use the calm
 // palette: they happen while the creature is at rest.
 func (t Theme) ActivityFrame(name string, tick int) (*sprite.Canvas, sprite.Palette) {
+	if t.data != nil {
+		return t.dataActivity(name, tick)
+	}
 	info, ok := activities[name]
 	if !ok {
 		return t.Frame(mood.Calm, tick)
@@ -163,4 +166,15 @@ func activityExtras(c *sprite.Canvas, name string, t int) {
 			c.Set(cx, 5, 'y')
 		}
 	}
+}
+
+// ActivityInfo describes an idle animation for this theme. A theme loaded from
+// a file can have its own lengths.
+func (t Theme) ActivityInfo(name string) (ActivityInfo, bool) {
+	if t.data != nil {
+		if a, ok := t.data.Activities[name]; ok && len(a.Sequence) > 0 {
+			return ActivityInfo{Ticks: len(a.Sequence), Loop: a.Loop}, true
+		}
+	}
+	return ActivityOf(name)
 }

@@ -453,3 +453,38 @@ func TestForgetWipesTheMemory(t *testing.T) {
 		t.Errorf("forgotten, but still remembers %+v", day)
 	}
 }
+
+func TestAnInstalledThemeCanBeChosenLikeABuiltInOne(t *testing.T) {
+	themes := t.TempDir()
+	t.Setenv("PO_THEMES_DIR", themes)
+	os.WriteFile(filepath.Join(themes, "mango.json"),
+		[]byte(`{"name":"mango","base":"soccer","palette":{"b":[250,200,20]},"lines":{"frustrated":["Mango is not amused."]}}`), 0o644)
+
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	readState(t, sub)
+
+	ipc.Send(ipc.Message{Op: "theme", Name: "mango"})
+	nextWith(t, sub, "the mango theme", func(s State) bool { return s.Theme == "mango" })
+
+	sock, _ := ipc.Path()
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(sock), "theme.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack theme.Pack
+	if err := json.Unmarshal(data, &pack); err != nil || pack.Name != "mango" {
+		t.Fatalf("exported %q (%v)", pack.Name, err)
+	}
+	if body := pack.Moods["calm"].Palette["b"]; body != [3]int{250, 200, 20} {
+		t.Errorf("the window would draw the body as %v, not the mango yellow", body)
+	}
+	listed := false
+	for _, n := range pack.Available {
+		listed = listed || n == "mango"
+	}
+	if !listed {
+		t.Errorf("the window's menu list %v should include mango", pack.Available)
+	}
+}

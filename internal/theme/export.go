@@ -17,16 +17,32 @@ const PackVersion = 1
 // Pack is a theme as plain data, so a program in another language can play it
 // without any drawing code of its own.
 type Pack struct {
-	Version int    `json:"version"`
+	Version int    `json:"version,omitempty"`
 	Name    string `json:"name"`
 	// Available lists every theme Po has, for a window's theme menu.
-	Available []string            `json:"available"`
-	Fps       map[string]int      `json:"fps"`
-	Moods     map[string]MoodPack `json:"moods"`
+	Available []string            `json:"available,omitempty"`
+	Fps       map[string]int      `json:"fps,omitempty"`
+	Moods     map[string]MoodPack `json:"moods,omitempty"`
 	// Activities are the idle animations, played while the creature is at rest.
-	Activities map[string]ActivityPack `json:"activities"`
-	Lines      map[string][]string     `json:"lines"`
-	Unsure     []string                `json:"unsure"`
+	Activities map[string]ActivityPack `json:"activities,omitempty"`
+	Lines      map[string][]string     `json:"lines,omitempty"`
+	Unsure     []string                `json:"unsure,omitempty"`
+	// Milestones and Recaps are the pet's lines for notable moments and weeks.
+	Milestones map[string][]string `json:"milestones,omitempty"`
+	Recaps     map[string][]string `json:"recaps,omitempty"`
+
+	// The fields below are for hand-written theme files. A reskin names a
+	// built-in character as its Base and changes only its colours, tints and
+	// words. A full pack leaves them out and spells out every frame in Moods.
+	Base    string              `json:"base,omitempty"`
+	Palette map[string][3]int   `json:"palette,omitempty"`
+	Tints   map[string]TintSpec `json:"tints,omitempty"`
+}
+
+// TintSpec moves a mood's body colour part of the way toward Color.
+type TintSpec struct {
+	Color    [3]int  `json:"color"`
+	Strength float64 `json:"strength"`
 }
 
 // MoodPack is how one mood looks: its colours and its looping animations.
@@ -48,10 +64,10 @@ type ActivityPack struct {
 // in row order ("." is transparent); Sequence lists which one to show at each
 // tick of the loop.
 type Animation struct {
-	W        int      `json:"w"`
-	H        int      `json:"h"`
-	Frames   []string `json:"frames"`
-	Sequence []int    `json:"sequence"`
+	W        int         `json:"w"`
+	H        int         `json:"h"`
+	Frames   []FrameText `json:"frames"`
+	Sequence []int       `json:"sequence"`
 }
 
 // Loop lengths in ticks, chosen so every moving part of a mood comes back to
@@ -75,7 +91,7 @@ func animation(frame func(tick int) *sprite.Canvas, period int) Animation {
 		if !seen {
 			i = len(a.Frames)
 			index[key] = i
-			a.Frames = append(a.Frames, key)
+			a.Frames = append(a.Frames, FrameText(key))
 		}
 		a.Sequence = append(a.Sequence, i)
 	}
@@ -84,6 +100,17 @@ func animation(frame func(tick int) *sprite.Canvas, period int) Animation {
 
 // Export describes the theme as a Pack.
 func (t Theme) Export() Pack {
+	if t.data != nil {
+		cp := *t.data
+		cp.Name, cp.Version, cp.Available = t.Name, PackVersion, Names()
+		if cp.Fps == nil {
+			cp.Fps = map[string]int{"full": Fps, "mini": MiniFps}
+		}
+		if cp.Activities == nil {
+			cp.Activities = map[string]ActivityPack{}
+		}
+		return cp
+	}
 	p := Pack{
 		Version:    PackVersion,
 		Name:       t.Name,
@@ -93,6 +120,8 @@ func (t Theme) Export() Pack {
 		Activities: map[string]ActivityPack{},
 		Lines:      map[string][]string{},
 		Unsure:     t.Unsure,
+		Milestones: t.Milestones,
+		Recaps:     t.Recaps,
 	}
 	for _, m := range mood.All {
 		pal := map[string][3]int{}
