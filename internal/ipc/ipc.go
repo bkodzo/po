@@ -19,6 +19,9 @@ import (
 type Message struct {
 	Op  string `json:"op,omitempty"`
 	TTY string `json:"tty,omitempty"`
+	// NoOverlay tells Po not to draw the corner pet in this shell's terminal,
+	// for a shell that cannot hide it while a command runs.
+	NoOverlay bool `json:"no_overlay,omitempty"`
 	// Name says which idle animation to play, for the "idle" op.
 	Name string         `json:"name,omitempty"`
 	Cmd  *event.Command `json:"cmd,omitempty"`

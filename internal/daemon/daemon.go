@@ -225,7 +225,7 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 			d.remember(*req.Cmd, ev.FailStreak, false)
 		}
 	}
-	if req.TTY != "" {
+	if req.TTY != "" && !req.NoOverlay {
 		d.show(req.TTY)
 	}
 	return false

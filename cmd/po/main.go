@@ -216,7 +216,7 @@ func gallery(th theme.Theme, letters bool) {
 const usage = `po: a mood-reactive pet for your terminal
 
   po init          set Po up: add the shell hook (asks first), start Po (po init --undo reverses it)
-  po hook zsh      print the shell hook; add  eval "$(po hook zsh)"  to ~/.zshrc
+  po hook zsh|bash|fish   print the shell hook (po init adds it for you)
   po start         start Po in the background (the hook also does this)
   po stop          stop Po; it stays off until you run po start
   po status        show what Po is doing, which reader it uses and where it sends data
