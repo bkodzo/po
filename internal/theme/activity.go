@@ -56,7 +56,7 @@ func (t Theme) ActivityFrame(name string, tick int) (*sprite.Canvas, sprite.Pale
 	p := activityPose(name, tick)
 	c := sprite.NewCanvas(CanvasW, CanvasH)
 	shadow(c, p.dy)
-	stampBody(c, bodyX+p.dx, bodyY+p.dy)
+	t.stamp(c, bodyX+p.dx, bodyY+p.dy)
 	face(c, bodyX+p.dx, bodyY+p.dy, p)
 	activityExtras(c, name, tick)
 	return c, t.paletteFor(mood.Calm)
@@ -145,14 +145,14 @@ func activityExtras(c *sprite.Canvas, name string, t int) {
 				if y < 0 {
 					y = 0
 				}
-				drawZ(c, cx+3+(age/6)%2, y)
+				drawZ(c, cx+5, y)
 				continue
 			}
 			y := 2 - age/10
 			if y < 0 {
 				y = 0
 			}
-			drawShape(c, cx-4+(age/6)%2, y, smallZ)
+			drawShape(c, 1, y, smallZ)
 		}
 	case "wake":
 		// A yellow exclamation mark, as if startled awake.

@@ -189,6 +189,15 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 	case "idle":
 		d.playActivity(req.Name)
 		return false
+	case "theme":
+		// A window asked for another theme, so remember the choice too.
+		if d.setTheme(req.Name) {
+			if cfg, err := config.Load(); err == nil {
+				cfg.Theme = req.Name
+				_ = cfg.Save()
+			}
+		}
+		return false
 	}
 	if req.Cmd != nil {
 		// Any command, even one too dull to react to, means someone is there.
@@ -299,6 +308,7 @@ func (d *Daemon) reload() {
 		return
 	}
 	d.overlayOn = cfg.Overlay != "off"
+	d.setTheme(cfg.Theme)
 	d.sched.SetConfig(idleConfig(cfg))
 	if cfg.Idle == "off" {
 		d.setActivity("")
@@ -481,7 +491,32 @@ func (d *Daemon) exportTheme() {
 	if err != nil {
 		return
 	}
-	_ = d.th.WriteFile(filepath.Join(filepath.Dir(sock), "theme.json"))
+	_ = d.currentTheme().WriteFile(filepath.Join(filepath.Dir(sock), "theme.json"))
+}
+
+// currentTheme is the theme in use now. It can change while Po runs.
+func (d *Daemon) currentTheme() theme.Theme {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.th
+}
+
+// setTheme switches to another theme and writes it out for the windows. It does
+// nothing for a name that does not exist. The new name reaches the windows in
+// the next state update, after the file is already written.
+func (d *Daemon) setTheme(name string) bool {
+	th, ok := theme.Get(name)
+	if !ok {
+		return false
+	}
+	d.mu.Lock()
+	changed := d.th.Name != name
+	d.th = th
+	d.mu.Unlock()
+	if changed {
+		d.exportTheme()
+	}
+	return true
 }
 
 func (d *Daemon) draw(tty string) {
@@ -492,7 +527,7 @@ func (d *Daemon) draw(tty string) {
 	}
 	d.mu.Unlock()
 
-	canvas, pal := d.th.MiniFrame(m, d.tick)
+	canvas, pal := d.currentTheme().MiniFrame(m, d.tick)
 	rows := strings.Split(canvas.Render(pal), "\n")
 	if err := d.targets[tty].Draw(rows, theme.MiniW); err != nil {
 		// The terminal is gone, so forget it.

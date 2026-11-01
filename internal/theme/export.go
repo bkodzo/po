@@ -17,10 +17,12 @@ const PackVersion = 1
 // Pack is a theme as plain data, so a program in another language can play it
 // without any drawing code of its own.
 type Pack struct {
-	Version int                 `json:"version"`
-	Name    string              `json:"name"`
-	Fps     map[string]int      `json:"fps"`
-	Moods   map[string]MoodPack `json:"moods"`
+	Version int    `json:"version"`
+	Name    string `json:"name"`
+	// Available lists every theme Po has, for a window's theme menu.
+	Available []string            `json:"available"`
+	Fps       map[string]int      `json:"fps"`
+	Moods     map[string]MoodPack `json:"moods"`
 	// Activities are the idle animations, played while the creature is at rest.
 	Activities map[string]ActivityPack `json:"activities"`
 	Lines      map[string][]string     `json:"lines"`
@@ -85,6 +87,7 @@ func (t Theme) Export() Pack {
 	p := Pack{
 		Version:    PackVersion,
 		Name:       t.Name,
+		Available:  Names(),
 		Fps:        map[string]int{"full": Fps, "mini": MiniFps},
 		Moods:      map[string]MoodPack{},
 		Activities: map[string]ActivityPack{},

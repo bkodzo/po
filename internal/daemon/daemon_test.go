@@ -287,3 +287,63 @@ func TestUnknownAnimationNamesAreIgnored(t *testing.T) {
 		t.Error("an unknown name should change nothing")
 	}
 }
+
+func TestSwitchingThemeReachesTheStreamTheFileAndTheConfig(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	first := readState(t, sub)
+	if first.Theme != "soccer" {
+		t.Fatalf("starts as %q", first.Theme)
+	}
+
+	ipc.Send(ipc.Message{Op: "theme", Name: "ghost"})
+	got := nextWith(t, sub, "the stream to announce the ghost theme", func(s State) bool { return s.Theme == "ghost" })
+
+	// The file a window reads must already be the new theme when the stream says so.
+	sock, _ := ipc.Path()
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(sock), "theme.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack theme.Pack
+	if err := json.Unmarshal(data, &pack); err != nil || pack.Name != "ghost" {
+		t.Errorf("theme.json says %q (%v), want ghost", pack.Name, err)
+	}
+	_ = got
+
+	// The choice is remembered.
+	if cfg, err := config.Load(); err != nil || cfg.Theme != "ghost" {
+		t.Errorf("config theme = %q (%v), want ghost", cfg.Theme, err)
+	}
+}
+
+func TestAnUnknownThemeChangesNothing(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	readState(t, sub)
+	ipc.Send(ipc.Message{Op: "theme", Name: "no-such-theme"})
+	time.Sleep(700 * time.Millisecond)
+	if cfg, _ := config.Load(); cfg.Theme == "no-such-theme" {
+		t.Error("an unknown theme must not be saved")
+	}
+	raw, _ := ipc.Ask(ipc.Message{Op: "status"})
+	if raw == nil {
+		t.Fatal("the daemon should still answer")
+	}
+}
+
+func TestAThemeChosenInTheConfigIsPickedUpOnReload(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	readState(t, sub)
+	cfg, _ := config.Load()
+	cfg.Theme = "cat"
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	ipc.Send(ipc.Message{Op: "reload"})
+	nextWith(t, sub, "the cat theme", func(s State) bool { return s.Theme == "cat" })
+}

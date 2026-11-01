@@ -34,7 +34,7 @@ func (t Theme) Frame(m mood.Mood, tick int) (*sprite.Canvas, sprite.Palette) {
 	c := sprite.NewCanvas(CanvasW, CanvasH)
 
 	shadow(c, p.dy)
-	stampBody(c, bodyX+p.dx, bodyY+p.dy)
+	t.stamp(c, bodyX+p.dx, bodyY+p.dy)
 	face(c, bodyX+p.dx, bodyY+p.dy, p)
 	extras(c, m, tick)
 	return c, t.paletteFor(m)
@@ -194,7 +194,8 @@ func extras(c *sprite.Canvas, m mood.Mood, t int) {
 	case mood.Frustrated:
 		// Steam puffs rising off the head.
 		rise := func(phase int) int { return bodyY - 1 - ((t/2+phase)%5)*1 }
-		for _, p := range []struct{ x, ph int }{{cx - 4, 0}, {cx + 3, 2}} {
+		// Off to each side of the head, so the steam never covers a cat's ears.
+		for _, p := range []struct{ x, ph int }{{cx - 7, 0}, {cx + 6, 2}} {
 			y := rise(p.ph)
 			c.Set(p.x, y, 'g')
 			c.Set(p.x+1, y, 'g')
@@ -203,7 +204,7 @@ func extras(c *sprite.Canvas, m mood.Mood, t int) {
 	case mood.Tired:
 		// A drifting Z, five pixels square so its diagonal reads as a Z.
 		step := (t / 4) % 4
-		x, y := cx+3+step%2, 1-step
+		x, y := cx+5, 1-step // clear of a cat's ears on either side
 		if y < 0 {
 			y = 0
 		}

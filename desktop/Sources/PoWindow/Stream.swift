@@ -73,22 +73,7 @@ final class StateStream {
     }
 
     private func connect() -> Int32? {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return nil }
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let path = Array(PoPaths.socket.utf8CString)
-        guard path.count <= MemoryLayout.size(ofValue: addr.sun_path) else { close(fd); return nil }
-        withUnsafeMutablePointer(to: &addr.sun_path) { p in
-            p.withMemoryRebound(to: CChar.self, capacity: path.count) { dst in
-                for i in 0..<path.count { dst[i] = path[i] }
-            }
-        }
-        let size = socklen_t(MemoryLayout<sockaddr_un>.size)
-        let result = withUnsafePointer(to: &addr) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, size) }
-        }
-        if result != 0 { close(fd); return nil }
+        guard let fd = connectToPo() else { return nil }
         let hello = Array("{\"op\":\"subscribe\"}\n".utf8)
         guard write(fd, hello, hello.count) == hello.count else { close(fd); return nil }
         return fd
@@ -129,5 +114,42 @@ private extension Data {
         while let f = d.first, f == 32 || f == 13 || f == 9 { d.removeFirst() }
         while let l = d.last, l == 32 || l == 13 || l == 9 { d.removeLast() }
         return d
+    }
+}
+
+/// Opens a connection to Po's socket, or returns nil if Po is not there.
+func connectToPo() -> Int32? {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else { return nil }
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    let path = Array(PoPaths.socket.utf8CString)
+    guard path.count <= MemoryLayout.size(ofValue: addr.sun_path) else { close(fd); return nil }
+    withUnsafeMutablePointer(to: &addr.sun_path) { p in
+        p.withMemoryRebound(to: CChar.self, capacity: path.count) { dst in
+            for i in 0..<path.count { dst[i] = path[i] }
+        }
+    }
+    let size = socklen_t(MemoryLayout<sockaddr_un>.size)
+    let result = withUnsafePointer(to: &addr) { p in
+        p.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, size) }
+    }
+    if result != 0 { close(fd); return nil }
+    return fd
+}
+
+/// Sends Po a single instruction, such as choosing a theme.
+enum PoControl {
+    static func send(op: String, name: String) {
+        DispatchQueue.global(qos: .utility).async {
+            guard let fd = connectToPo() else { return }
+            defer { close(fd) }
+            let line = Array("{\"op\":\"\(op)\",\"name\":\"\(name)\"}\n".utf8)
+            guard write(fd, line, line.count) == line.count else { return }
+            var buffer = [UInt8](repeating: 0, count: 64)
+            var timeout = timeval(tv_sec: 1, tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+            _ = Darwin.read(fd, &buffer, buffer.count) // wait for Po to acknowledge
+        }
     }
 }

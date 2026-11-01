@@ -82,8 +82,8 @@ func main() {
 
 	th, ok := theme.Get(cfg.Theme)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown theme %q\n", cfg.Theme)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "po: unknown theme %q, using soccer (see: po theme list)\n", cfg.Theme)
+		th = theme.Soccer
 	}
 
 	switch sub {
@@ -214,6 +214,7 @@ const usage = `po: a mood-reactive pet for your terminal
   po window login on|off   start the window automatically at every login
   po idle <name>   play an idle animation now (look, stretch, sleep, wake)
   po watch         print the pet's state as it changes (what a window receives)
+  po theme list|set <name>   choose the character (soccer, ghost, cat)
   po theme export  write the theme as data for a window to play
   po gallery       show every mood
   po compare       compare the keyword reader with the model (lines from stdin)

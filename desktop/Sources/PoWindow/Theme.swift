@@ -29,6 +29,8 @@ struct ThemePack: Decodable {
 
     let version: Int
     let name: String
+    /// Every theme Po has, for the theme menu. Older packs do not list them.
+    let available: [String]?
     let fps: [String: Int]
     let moods: [String: MoodPack]
     /// Older themes have none, so this is optional.

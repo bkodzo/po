@@ -290,6 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             let pack = try ThemePack.load(from: PoPaths.theme)
             view.cache = FrameCache(pack: pack)
+            lastIcon = ""
             resize(toScale: view.scale)
             updateStatusIcon()
             return true
@@ -352,6 +353,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         savePosition()
     }
 
+    @objc func chooseTheme(_ item: NSMenuItem) {
+        guard let name = item.representedObject as? String else { return }
+        PoControl.send(op: "theme", name: name)
+    }
+
     @objc func toggleAlwaysGrab() {
         alwaysGrab.toggle()
         UserDefaults.standard.set(alwaysGrab, forKey: "alwaysGrab")
@@ -382,6 +388,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         sizeItem.submenu = sizes
         menu.addItem(sizeItem)
+
+        if let themes = view.cache?.pack.available, themes.count > 1 {
+            let themeItem = NSMenuItem(title: "Character", action: nil, keyEquivalent: "")
+            let choices = NSMenu()
+            for name in themes {
+                let it = NSMenuItem(title: name.prefix(1).uppercased() + name.dropFirst(), action: #selector(chooseTheme(_:)), keyEquivalent: "")
+                it.target = self
+                it.representedObject = name
+                it.state = view.cache?.pack.name == name ? .on : .off
+                choices.addItem(it)
+            }
+            themeItem.submenu = choices
+            menu.addItem(themeItem)
+        }
 
         let grab = NSMenuItem(title: "Grab with a plain click (no Option key)", action: #selector(toggleAlwaysGrab), keyEquivalent: "")
         grab.target = self
@@ -420,6 +440,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func apply(_ state: PetState) {
+        // Po switched theme: its file is already written, so load it.
+        if let loaded = view.cache?.pack.name, loaded != state.theme {
+            connected = loadTheme()
+            lastFrameKey = ""
+            refreshVisibility()
+        }
         if state.mood != view.mood {
             view.mood = state.mood
             view.tick = 0
