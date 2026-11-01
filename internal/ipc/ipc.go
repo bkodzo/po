@@ -17,9 +17,11 @@ import (
 // "hide" or "stop". A message with a TTY and no Op also means the shell is
 // waiting at a prompt on that terminal.
 type Message struct {
-	Op  string         `json:"op,omitempty"`
-	TTY string         `json:"tty,omitempty"`
-	Cmd *event.Command `json:"cmd,omitempty"`
+	Op  string `json:"op,omitempty"`
+	TTY string `json:"tty,omitempty"`
+	// Name says which idle animation to play, for the "idle" op.
+	Name string         `json:"name,omitempty"`
+	Cmd  *event.Command `json:"cmd,omitempty"`
 }
 
 // Request is a received message. Ack tells the sender it has been handled.

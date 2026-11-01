@@ -37,18 +37,25 @@ type Config struct {
 	// made of text characters, so selecting text near it copies the pet too; the
 	// desktop window (po window) has no such problem.
 	Overlay string
+	// Idle is "on" for little animations while nothing is happening (looking
+	// around, stretching, sleeping), or "off" for a pet that only reacts.
+	Idle string
+	// SleepMinutes is how long with no commands before the pet falls asleep.
+	SleepMinutes int
 }
 
 func Default() Config {
 	return Config{
-		Reader:      "auto",
-		URL:         "http://127.0.0.1:8080",
-		Model:       "clef-flash",
-		KeyEnv:      "PO_API_KEY",
-		Gate:        0.6,
-		IdleMinutes: 10,
-		Theme:       "soccer",
-		Overlay:     "off",
+		Reader:       "auto",
+		URL:          "http://127.0.0.1:8080",
+		Model:        "clef-flash",
+		KeyEnv:       "PO_API_KEY",
+		Gate:         0.6,
+		IdleMinutes:  10,
+		Theme:        "soccer",
+		Overlay:      "off",
+		Idle:         "on",
+		SleepMinutes: 10,
 	}
 }
 
@@ -101,7 +108,7 @@ var readers = map[string]bool{"auto": true, "rules": true, "keyword": true, "dec
 
 // Keys lists every setting name.
 func Keys() []string {
-	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme", "overlay"}
+	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme", "overlay", "idle", "sleep_minutes"}
 	sort.Strings(k)
 	return k
 }
@@ -137,6 +144,17 @@ func (c *Config) Set(key, value string) error {
 		c.IdleMinutes = n
 	case "theme":
 		c.Theme = value
+	case "idle":
+		if value != "on" && value != "off" {
+			return fmt.Errorf("idle must be on or off, not %q", value)
+		}
+		c.Idle = value
+	case "sleep_minutes":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 {
+			return fmt.Errorf("sleep_minutes must be a whole number of at least 1")
+		}
+		c.SleepMinutes = n
 	case "overlay":
 		if value != "on" && value != "off" {
 			return fmt.Errorf("overlay must be on or off, not %q", value)
@@ -170,6 +188,10 @@ func (c Config) Get(key string) (string, error) {
 		return c.Theme, nil
 	case "overlay":
 		return c.Overlay, nil
+	case "idle":
+		return c.Idle, nil
+	case "sleep_minutes":
+		return strconv.Itoa(c.SleepMinutes), nil
 	}
 	return "", fmt.Errorf("unknown setting %q (known: %s)", key, strings.Join(Keys(), ", "))
 }

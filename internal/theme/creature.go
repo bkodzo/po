@@ -201,16 +201,13 @@ func extras(c *sprite.Canvas, m mood.Mood, t int) {
 			c.Set(p.x, y-1, 'g')
 		}
 	case mood.Tired:
-		// A drifting Z, four pixels square so the diagonal is readable.
+		// A drifting Z, five pixels square so its diagonal reads as a Z.
 		step := (t / 4) % 4
-		// It drifts up from just above the head but stays inside the canvas.
-		x, y := cx+5+step%2, 2-step
+		x, y := cx+3+step%2, 1-step
 		if y < 0 {
 			y = 0
 		}
-		for _, px := range [][2]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}, {2, 1}, {1, 2}, {0, 3}, {1, 3}, {2, 3}, {3, 3}} {
-			c.Set(x+px[0], y+px[1], 'z')
-		}
+		drawZ(c, x, y)
 	case mood.Celebrating:
 		spots := [][2]int{{1, 8}, {17, 2}, {1, 14}, {18, 11}}
 		for i, s := range spots {
@@ -220,5 +217,28 @@ func extras(c *sprite.Canvas, m mood.Mood, t int) {
 				}
 			}
 		}
+	}
+}
+
+// bigZ is a Z five pixels square. Any smaller and its diagonal is too short to
+// read, so it looks like an I.
+var bigZ = [][2]int{
+	{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0},
+	{3, 1}, {2, 2}, {1, 3},
+	{0, 4}, {1, 4}, {2, 4}, {3, 4}, {4, 4},
+}
+
+// smallZ is a four-pixel Z, for a second, fainter one beside the first.
+var smallZ = [][2]int{
+	{0, 0}, {1, 0}, {2, 0}, {3, 0},
+	{2, 1}, {1, 2},
+	{0, 3}, {1, 3}, {2, 3}, {3, 3},
+}
+
+func drawZ(c *sprite.Canvas, x, y int) { drawShape(c, x, y, bigZ) }
+
+func drawShape(c *sprite.Canvas, x, y int, pts [][2]int) {
+	for _, p := range pts {
+		c.Set(x+p[0], y+p[1], 'z')
 	}
 }

@@ -48,6 +48,9 @@ func main() {
 		case "overlay":
 			runOverlay(args[1:])
 			return
+		case "idle":
+			runIdle(args[1:])
+			return
 		case "theme":
 			runTheme(args[1:])
 			return
@@ -209,6 +212,7 @@ const usage = `po: a mood-reactive pet for your terminal
   po overlay on|off   also draw a small text pet in your terminals' corner (off by default)
   po window        show the pet as a small window on your desktop (po window stop to close)
   po window login on|off   start the window automatically at every login
+  po idle <name>   play an idle animation now (look, stretch, sleep, wake)
   po watch         print the pet's state as it changes (what a window receives)
   po theme export  write the theme as data for a window to play
   po gallery       show every mood

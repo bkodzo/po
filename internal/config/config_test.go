@@ -112,3 +112,29 @@ func TestOverlaySetting(t *testing.T) {
 		t.Error("only on and off should be accepted")
 	}
 }
+
+func TestIdleSettings(t *testing.T) {
+	use(t)
+	c := Default()
+	if c.Idle != "on" || c.SleepMinutes != 10 {
+		t.Errorf("defaults wrong: idle %q, sleep %d", c.Idle, c.SleepMinutes)
+	}
+	if err := c.Set("idle", "off"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Set("sleep_minutes", "3"); err != nil {
+		t.Fatal(err)
+	}
+	if c.Save() != nil {
+		t.Fatal("save failed")
+	}
+	got, err := Load()
+	if err != nil || got.Idle != "off" || got.SleepMinutes != 3 {
+		t.Errorf("did not round trip: %+v, %v", got, err)
+	}
+	for k, v := range map[string]string{"idle": "sometimes", "sleep_minutes": "0"} {
+		if c.Set(k, v) == nil {
+			t.Errorf("%s = %s should be rejected", k, v)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"math/rand"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/bkodzo/po/internal/config"
 	"github.com/bkodzo/po/internal/event"
+	"github.com/bkodzo/po/internal/idle"
 	"github.com/bkodzo/po/internal/ipc"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/overlay"
@@ -44,6 +46,11 @@ type State struct {
 	Line    string `json:"line,omitempty"`
 	LineSeq int    `json:"line_seq"`
 	Theme   string `json:"theme"`
+	// Activity is an idle animation to play ("look", "stretch", "sleep", "wake"),
+	// or empty. ActivitySeq goes up each time one starts, so a body can tell a
+	// new one from the one it is already playing.
+	Activity    string `json:"activity,omitempty"`
+	ActivitySeq int    `json:"activity_seq"`
 }
 
 // StateVersion is bumped when State changes in a way a body would notice.
@@ -109,6 +116,14 @@ type Daemon struct {
 	lastState State
 
 	overlayOn bool
+
+	// Idle life. Only the main loop touches these.
+	sched         *idle.Scheduler
+	lastEvent     time.Time
+	activity      string
+	activityLoop  bool
+	activityUntil time.Time
+	activitySeq   int
 }
 
 // Run serves requests until a stop message arrives.
@@ -125,6 +140,9 @@ func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 
 		overlayOn: st.Cfg.Overlay != "off",
 	}
+	now := time.Now()
+	d.lastEvent = now
+	d.sched = idle.New(idleConfig(st.Cfg), rand.New(rand.NewSource(now.UnixNano())), now)
 	d.exportTheme()
 	go d.worker()
 	stopWatch := make(chan struct{})
@@ -168,6 +186,13 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 	case "reload":
 		d.reload()
 		return false
+	case "idle":
+		d.playActivity(req.Name)
+		return false
+	}
+	if req.Cmd != nil {
+		// Any command, even one too dull to react to, means someone is there.
+		d.userActive()
 	}
 	if req.Cmd != nil && !req.Cmd.Ignore() {
 		d.submit(d.eventFor(*req.Cmd))
@@ -274,6 +299,10 @@ func (d *Daemon) reload() {
 		return
 	}
 	d.overlayOn = cfg.Overlay != "off"
+	d.sched.SetConfig(idleConfig(cfg))
+	if cfg.Idle == "off" {
+		d.setActivity("")
+	}
 	if !d.overlayOn {
 		for tty := range d.targets {
 			d.hide(tty)
@@ -302,8 +331,74 @@ func (d *Daemon) hide(tty string) {
 	}
 }
 
+// idleConfig turns the settings into the scheduler's.
+func idleConfig(cfg config.Config) idle.Config {
+	c := idle.DefaultConfig()
+	c.On = cfg.Idle != "off"
+	if cfg.SleepMinutes > 0 {
+		c.SleepAfter = time.Duration(cfg.SleepMinutes) * time.Minute
+	}
+	return c
+}
+
+// userActive notes that someone is at the keyboard. A sleeping pet wakes with a
+// start, and any other idle animation is cut short.
+func (d *Daemon) userActive() {
+	d.lastEvent = time.Now()
+	switch d.activity {
+	case "":
+	case "sleep":
+		d.setActivity("wake")
+	default:
+		d.setActivity("")
+	}
+}
+
+// setActivity starts an idle animation, or clears it if name is empty.
+func (d *Daemon) setActivity(name string) {
+	d.activity = name
+	d.activityLoop = false
+	if name == "" {
+		return
+	}
+	info, ok := theme.ActivityOf(name)
+	if !ok {
+		d.activity = ""
+		return
+	}
+	d.activitySeq++
+	d.activityLoop = info.Loop
+	d.activityUntil = time.Now().Add(time.Duration(info.Ticks) * time.Second / theme.Fps)
+}
+
+// playActivity plays an idle animation on request, for `po idle <name>`.
+func (d *Daemon) playActivity(name string) {
+	if _, ok := theme.ActivityOf(name); ok {
+		d.setActivity(name)
+	}
+}
+
+// idleTick ends a finished animation and starts a new one when it is time.
+func (d *Daemon) idleTick() {
+	now := time.Now()
+	if d.activity != "" && !d.activityLoop && now.After(d.activityUntil) {
+		d.setActivity("")
+	}
+	if d.activity != "" {
+		return
+	}
+	d.mu.Lock()
+	resting := d.pet.Mood
+	busy := now.Before(d.flashUntil)
+	d.mu.Unlock()
+	if name := d.sched.Pick(now, d.lastEvent, resting, busy); name != "" {
+		d.setActivity(name)
+	}
+}
+
 func (d *Daemon) redraw() {
 	d.tick++
+	d.idleTick()
 	d.mu.Lock()
 	d.pet.Decay(tickEvery)
 	d.mu.Unlock()
@@ -321,9 +416,15 @@ func (d *Daemon) current() State {
 	if time.Now().Before(d.flashUntil) {
 		shown = d.flash
 	}
+	// Idle animations only show while the creature is at rest.
+	activity := d.activity
+	if time.Now().Before(d.flashUntil) || (d.pet.Mood != mood.Calm && d.pet.Mood != mood.Focused) {
+		activity = ""
+	}
 	return State{
 		V: StateVersion, Mood: string(shown), Resting: string(d.pet.Mood),
 		Line: d.line, LineSeq: d.lineSeq, Theme: d.th.Name,
+		Activity: activity, ActivitySeq: d.activitySeq,
 	}
 }
 

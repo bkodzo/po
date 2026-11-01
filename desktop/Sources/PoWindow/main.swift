@@ -66,6 +66,9 @@ final class PetView: NSView {
     var cache: FrameCache?
     var mood = "calm"
     var tick = 0
+    /// The idle animation playing now, if any, and how far into it.
+    var activity: String?
+    var activityTick = 0
     var line: String?
     var lineShownAt = Date.distantPast
     var dragging = false
@@ -103,8 +106,9 @@ final class PetView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let idleImage = activity.flatMap { cache?.activityImage(name: $0, tick: activityTick) }
         guard let ctx = NSGraphicsContext.current?.cgContext,
-              let image = cache?.image(mood: mood, tick: tick) else { return }
+              let image = idleImage ?? cache?.image(mood: mood, tick: tick) else { return }
         ctx.interpolationQuality = .none
         ctx.draw(image, in: petRect)
         drawBubble()
@@ -143,6 +147,9 @@ final class PetView: NSView {
         let x = Int((point.x - rect.minX) / CGFloat(scale))
         let fromBottom = Int((point.y - rect.minY) / CGFloat(scale))
         let (_, h) = spriteSize
+        if let name = activity, cache?.activityLength(name) != nil {
+            return cache?.activityIsSolid(name: name, tick: activityTick, x: x, y: h - 1 - fromBottom) ?? false
+        }
         return cache?.isSolid(mood: mood, tick: tick, x: x, y: h - 1 - fromBottom) ?? false
     }
 
@@ -199,6 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var seenLineSeq: Int?
     var lastStatus = ""
     var lastFrameKey = ""
+    /// The sequence number of the idle animation last started, so one that has
+    /// already played is not played again while Po is still announcing it.
+    var playedActivitySeq = -1
     var connected = false
     var userHidden = false
     var alwaysGrab = UserDefaults.standard.bool(forKey: "alwaysGrab")
@@ -293,6 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch status {
         case "connected":
             seenLineSeq = nil // the first state after connecting is not news
+            playedActivitySeq = -1
             connected = loadTheme()
         default:
             // Po is not there, so there is nothing to show. The window comes back
@@ -408,6 +419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             view.tick = 0
             updateStatusIcon()
         }
+        applyActivity(state)
         if let seen = seenLineSeq {
             if state.lineSeq > seen, let line = state.line, !line.isEmpty {
                 view.line = line
@@ -418,6 +430,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.needsDisplay = true
     }
 
+    /// Starts or stops an idle animation as Po says. A new sequence number means
+    /// a new animation; the same number with nothing playing means it has already
+    /// finished here.
+    func applyActivity(_ state: PetState) {
+        guard let name = state.activity, !name.isEmpty else {
+            if view.activity != nil { view.activity = nil; view.needsDisplay = true }
+            return
+        }
+        let seq = state.activitySeq ?? 0
+        guard seq != playedActivitySeq, view.cache?.activityLength(name) != nil else { return }
+        playedActivitySeq = seq
+        view.activity = name
+        view.activityTick = 0
+        view.needsDisplay = true
+    }
+
     /// Moves the animation on one tick, and only redraws if what is on screen
     /// would change: a new picture, or a speech bubble that is showing or fading.
     func advance() {
@@ -425,7 +453,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.tick += 1
         ticksSinceLog += 1
         if panel.isVisible && (panel.frame.contains(NSEvent.mouseLocation) || targetAlpha != 1) { updateInteraction() }
-        let key = "\(view.mood)/\(anim.sequence[view.tick % anim.sequence.count])"
+
+        var key: String
+        if let name = view.activity, let length = cache.activityLength(name) {
+            view.activityTick += 1
+            if !length.loop && view.activityTick >= length.ticks {
+                view.activity = nil // a one-off has finished; back to the mood's loop
+                key = "\(view.mood)/\(anim.sequence[view.tick % anim.sequence.count])"
+            } else {
+                key = "act:\(name)/\(cache.activityFrameIndex(name: name, tick: view.activityTick) ?? 0)"
+            }
+        } else {
+            key = "\(view.mood)/\(anim.sequence[view.tick % anim.sequence.count])"
+        }
         let bubbleActive = view.line != nil && Date().timeIntervalSince(view.lineShownAt) < PetView.lineLife + 0.3
         if key != lastFrameKey || bubbleActive {
             lastFrameKey = key
@@ -440,7 +480,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let index = anim.sequence[view.tick % anim.sequence.count]
-        print("log: mood \(view.mood), tick \(view.tick), frame \(index) of \(anim.frames.count)\(view.line.map { ", line \"\($0)\"" } ?? "") | last second: \(ticksSinceLog) ticks, \(redrawsSinceLog) redraws, \(mouseSinceLog) mouse events | pointer: \(interaction), alpha \(String(format: "%.2f", Double(targetAlpha)))")
+        let doing = view.activity.map { ", doing \($0) (tick \(view.activityTick))" } ?? ""
+        print("log: mood \(view.mood)\(doing), tick \(view.tick), frame \(index) of \(anim.frames.count)\(view.line.map { ", line \"\($0)\"" } ?? "") | last second: \(ticksSinceLog) ticks, \(redrawsSinceLog) redraws, \(mouseSinceLog) mouse events | pointer: \(interaction), alpha \(String(format: "%.2f", Double(targetAlpha)))")
         ticksSinceLog = 0; redrawsSinceLog = 0; mouseSinceLog = 0
     }
 

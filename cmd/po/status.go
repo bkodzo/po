@@ -70,6 +70,11 @@ func runStatus() {
 	}
 
 	fmt.Printf("corner pet in terminals: %s\n", cfg.Overlay)
+	if cfg.Idle == "on" {
+		fmt.Printf("idle animations: on (falls asleep after %d min with no commands)\n", cfg.SleepMinutes)
+	} else {
+		fmt.Println("idle animations: off")
+	}
 	if st != nil {
 		fmt.Printf("events: %d handled; fail streak %d; shown in %d terminal(s)\n", st.Events, st.FailStreak, st.Terminals)
 		if cfg.Reader == "auto" {

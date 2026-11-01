@@ -179,3 +179,111 @@ func TestThemeIsExportedNextToTheSocket(t *testing.T) {
 	}
 	t.Errorf("theme.json was not written to %s", path)
 }
+
+// nextWith reads states until one satisfies ok, or fails after a timeout.
+func nextWith(t *testing.T, sub *ipc.Subscription, why string, ok func(State) bool) State {
+	t.Helper()
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		raw, err := sub.Next()
+		if err != nil {
+			t.Fatalf("%s: stream ended: %v", why, err)
+		}
+		var st State
+		if json.Unmarshal(raw, &st) != nil {
+			continue
+		}
+		if ok(st) {
+			return st
+		}
+	}
+	t.Fatalf("timed out waiting for: %s", why)
+	return State{}
+}
+
+func TestAnIdleAnimationIsStreamedAndEndsByItself(t *testing.T) {
+	defer startDaemon(t)()
+	sub, err := ipc.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	readState(t, sub) // the starting state
+
+	if err := ipc.Send(ipc.Message{Op: "idle", Name: "wake"}); err != nil {
+		t.Fatal(err)
+	}
+	started := nextWith(t, sub, "wake to start", func(s State) bool { return s.Activity == "wake" })
+	if started.ActivitySeq != 1 {
+		t.Errorf("activity_seq = %d, want 1", started.ActivitySeq)
+	}
+	ended := nextWith(t, sub, "wake to end", func(s State) bool { return s.Activity == "" })
+	if ended.ActivitySeq != 1 {
+		t.Errorf("ending must not look like a new animation: seq %d", ended.ActivitySeq)
+	}
+}
+
+func TestACommandWakesASleepingPet(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	readState(t, sub)
+
+	ipc.Send(ipc.Message{Op: "idle", Name: "sleep"})
+	nextWith(t, sub, "sleep to start", func(s State) bool { return s.Activity == "sleep" })
+
+	// Even a command too dull to react to means someone is back.
+	ipc.Send(ipc.Message{Cmd: &event.Command{Text: "ls", Exit: 0}})
+	woke := nextWith(t, sub, "the pet to wake", func(s State) bool { return s.Activity == "wake" })
+	if woke.ActivitySeq < 2 {
+		t.Errorf("waking is a new animation, seq %d", woke.ActivitySeq)
+	}
+}
+
+func TestAReactionCutsAnIdleAnimationShort(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	readState(t, sub)
+
+	ipc.Send(ipc.Message{Op: "idle", Name: "stretch"})
+	nextWith(t, sub, "stretch to start", func(s State) bool { return s.Activity == "stretch" })
+
+	ipc.Send(ipc.Message{Cmd: &event.Command{Text: "go test ./...", Exit: 1}})
+	got := nextWith(t, sub, "the failure to take over", func(s State) bool { return s.Mood == "frustrated" })
+	if got.Activity != "" {
+		t.Errorf("a stretch should not play over a reaction, got %q", got.Activity)
+	}
+}
+
+func TestTurningIdleOffStopsTheAnimation(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	readState(t, sub)
+
+	cfg, _ := config.Load()
+	cfg.Idle = "off"
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	ipc.Send(ipc.Message{Op: "idle", Name: "sleep"})
+	nextWith(t, sub, "sleep to start", func(s State) bool { return s.Activity == "sleep" })
+	ipc.Send(ipc.Message{Op: "reload"})
+	nextWith(t, sub, "sleep to stop once idle is off", func(s State) bool { return s.Activity == "" })
+}
+
+func TestUnknownAnimationNamesAreIgnored(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	first := readState(t, sub)
+	ipc.Send(ipc.Message{Op: "idle", Name: "backflip"})
+	time.Sleep(600 * time.Millisecond)
+	raw, _ := ipc.Ask(ipc.Message{Op: "status"})
+	var s Status
+	json.Unmarshal(raw, &s)
+	if first.ActivitySeq != 0 || s.Mood == "" {
+		t.Error("an unknown name should change nothing")
+	}
+}

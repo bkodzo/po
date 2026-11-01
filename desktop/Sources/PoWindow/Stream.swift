@@ -9,10 +9,14 @@ struct PetState: Decodable, Equatable {
     let line: String?
     let lineSeq: Int
     let theme: String
+    /// An idle animation to play, or empty/nil. activitySeq goes up when a new one starts.
+    let activity: String?
+    let activitySeq: Int?
 
     enum CodingKeys: String, CodingKey {
-        case v, mood, resting, line, theme
+        case v, mood, resting, line, theme, activity
         case lineSeq = "line_seq"
+        case activitySeq = "activity_seq"
     }
 
     static let supportedVersion = 1

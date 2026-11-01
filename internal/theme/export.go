@@ -21,8 +21,10 @@ type Pack struct {
 	Name    string              `json:"name"`
 	Fps     map[string]int      `json:"fps"`
 	Moods   map[string]MoodPack `json:"moods"`
-	Lines   map[string][]string `json:"lines"`
-	Unsure  []string            `json:"unsure"`
+	// Activities are the idle animations, played while the creature is at rest.
+	Activities map[string]ActivityPack `json:"activities"`
+	Lines      map[string][]string     `json:"lines"`
+	Unsure     []string                `json:"unsure"`
 }
 
 // MoodPack is how one mood looks: its colours and its looping animations.
@@ -30,6 +32,14 @@ type MoodPack struct {
 	Palette map[string][3]int `json:"palette"`
 	Full    Animation         `json:"full"`
 	Mini    Animation         `json:"mini"`
+}
+
+// ActivityPack is an idle animation: its colours, its pictures, and whether it
+// repeats (sleeping) or plays once.
+type ActivityPack struct {
+	Palette map[string][3]int `json:"palette"`
+	Loop    bool              `json:"loop"`
+	Animation
 }
 
 // Animation is a loop. Frames are unique pictures, each as W*H palette letters
@@ -73,12 +83,13 @@ func animation(frame func(tick int) *sprite.Canvas, period int) Animation {
 // Export describes the theme as a Pack.
 func (t Theme) Export() Pack {
 	p := Pack{
-		Version: PackVersion,
-		Name:    t.Name,
-		Fps:     map[string]int{"full": Fps, "mini": MiniFps},
-		Moods:   map[string]MoodPack{},
-		Lines:   map[string][]string{},
-		Unsure:  t.Unsure,
+		Version:    PackVersion,
+		Name:       t.Name,
+		Fps:        map[string]int{"full": Fps, "mini": MiniFps},
+		Moods:      map[string]MoodPack{},
+		Activities: map[string]ActivityPack{},
+		Lines:      map[string][]string{},
+		Unsure:     t.Unsure,
 	}
 	for _, m := range mood.All {
 		pal := map[string][3]int{}
@@ -98,6 +109,22 @@ func (t Theme) Export() Pack {
 			}, miniPeriod[m]),
 		}
 		p.Lines[string(m)] = t.Lines[m]
+	}
+	calm := map[string][3]int{}
+	for k, c := range t.paletteFor(mood.Calm) {
+		calm[string(k)] = [3]int{int(c.R), int(c.G), int(c.B)}
+	}
+	for _, name := range ActivityNames() {
+		name := name
+		info := activities[name]
+		p.Activities[name] = ActivityPack{
+			Palette: calm,
+			Loop:    info.Loop,
+			Animation: animation(func(tick int) *sprite.Canvas {
+				c, _ := t.ActivityFrame(name, tick)
+				return c
+			}, info.Ticks),
+		}
 	}
 	return p
 }

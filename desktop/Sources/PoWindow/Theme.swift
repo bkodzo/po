@@ -16,10 +16,23 @@ struct ThemePack: Decodable {
         let mini: Animation
     }
 
+    /// An idle animation: it has its own colours, and either repeats (sleeping)
+    /// or plays once.
+    struct ActivityPack: Decodable {
+        let palette: [String: [Int]]
+        let loop: Bool
+        let w: Int
+        let h: Int
+        let frames: [String]
+        let sequence: [Int]
+    }
+
     let version: Int
     let name: String
     let fps: [String: Int]
     let moods: [String: MoodPack]
+    /// Older themes have none, so this is optional.
+    let activities: [String: ActivityPack]?
     let lines: [String: [String]]
 
     static let supportedVersion = 1
@@ -58,6 +71,38 @@ final class FrameCache {
         }
         images[key] = image
         return image
+    }
+
+    // MARK: Idle animations
+
+    func activityLength(_ name: String) -> (ticks: Int, loop: Bool)? {
+        guard let a = pack.activities?[name], !a.sequence.isEmpty else { return nil }
+        return (a.sequence.count, a.loop)
+    }
+
+    /// The picture to show at a tick of an idle animation. A one-off holds its
+    /// last picture if asked for a tick past its end.
+    func activityImage(name: String, tick: Int) -> CGImage? {
+        guard let a = pack.activities?[name], !a.sequence.isEmpty else { return nil }
+        let t = a.loop ? tick % a.sequence.count : min(tick, a.sequence.count - 1)
+        let index = a.sequence[t]
+        let key = "act:\(name)/\(index)"
+        if let cached = images[key] { return cached }
+        guard let image = build(frame: a.frames[index], width: a.w, height: a.h, palette: a.palette) else { return nil }
+        images[key] = image
+        return image
+    }
+
+    func activityFrameIndex(name: String, tick: Int) -> Int? {
+        guard let a = pack.activities?[name], !a.sequence.isEmpty else { return nil }
+        return a.sequence[a.loop ? tick % a.sequence.count : min(tick, a.sequence.count - 1)]
+    }
+
+    func activityIsSolid(name: String, tick: Int, x: Int, y: Int) -> Bool {
+        guard let a = pack.activities?[name], !a.sequence.isEmpty, x >= 0, y >= 0, x < a.w, y < a.h else { return false }
+        let t = a.loop ? tick % a.sequence.count : min(tick, a.sequence.count - 1)
+        let letters = Array(a.frames[a.sequence[t]])
+        return a.palette[String(letters[y * a.w + x])] != nil
     }
 
     /// One bitmap pixel per sprite pixel; scaling happens when drawing, with no
