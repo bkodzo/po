@@ -138,3 +138,17 @@ func TestIdleSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestMemorySetting(t *testing.T) {
+	use(t)
+	c := Default()
+	if c.Memory != "on" {
+		t.Errorf("memory defaults to %q", c.Memory)
+	}
+	if c.Set("memory", "off") != nil || c.Memory != "off" {
+		t.Error("could not turn memory off")
+	}
+	if c.Set("memory", "maybe") == nil {
+		t.Error("only on and off are valid")
+	}
+}

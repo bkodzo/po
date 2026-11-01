@@ -9,6 +9,7 @@ import (
 	"github.com/bkodzo/po/internal/config"
 	"github.com/bkodzo/po/internal/daemon"
 	"github.com/bkodzo/po/internal/ipc"
+	"github.com/bkodzo/po/internal/memory"
 	"github.com/bkodzo/po/internal/stack"
 )
 
@@ -70,6 +71,12 @@ func runStatus() {
 	}
 
 	fmt.Printf("corner pet in terminals: %s\n", cfg.Overlay)
+	if cfg.Memory == "on" {
+		days := len(memory.Load(memory.DefaultPath()).Days)
+		fmt.Printf("memory: on (%d %s remembered; counts only, never commands; see po recap, po forget)\n", days, plural(days, "day", "days"))
+	} else {
+		fmt.Println("memory: off")
+	}
 	if cfg.Idle == "on" {
 		fmt.Printf("idle animations: on (falls asleep after %d min with no commands)\n", cfg.SleepMinutes)
 	} else {

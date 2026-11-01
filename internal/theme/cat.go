@@ -61,5 +61,19 @@ var Cat = Theme{
 		mood.Tired:       {"Nap time. The first of many.", "Need a catnap.", "Curling up now."},
 		mood.Calm:        {"Purring softly.", "Just loafing.", "Nothing to chase."},
 	},
+	Milestones: map[string][]string{
+		"record":     {"%d failures in a row. I would knock it off the table.", "A record %d failures. Hiss."},
+		"relief":     {"Purr-fect! Green after %d failures.", "%d failures, then success. Paw-sitively good."},
+		"late_run":   {"%d late nights in a row. Cats are nocturnal, you are not.", "Night %d running. Go and sleep, human."},
+		"comeback":   {"Back after %d hours. I was napping anyway.", "%d hours away. I did not miss you. A little."},
+		"busy":       {"%d commands today. Even I am tired.", "That is %d commands. Quite the day."},
+		"first_push": {"First push of the day. Good human.", "Pushed already. Here, a head bump."},
+	},
+	Recaps: map[string][]string{
+		"quiet":  {"A quiet week. Excellent napping.", "Hardly any commands. I approve."},
+		"rough":  {"A rough week, but you landed on your feet.", "Many failures, yet you kept pouncing."},
+		"steady": {"A steady week. Nicely loafed.", "Nothing dramatic. Good."},
+		"great":  {"A purr-fect week.", "The cat's whiskers of a week."},
+	},
 	Unsure: []string{"Was that a mouse?", "Was that a laser dot?"},
 }

@@ -64,5 +64,19 @@ var Ghost = Theme{
 		mood.Tired:       {"Dead tired.", "Time to rest in peace.", "Back to my coffin soon."},
 		mood.Calm:        {"Just drifting.", "All quiet on the ghost front.", "Nothing but cobwebs."},
 	},
+	Milestones: map[string][]string{
+		"record":     {"%d failures in a row. Truly haunted.", "A record %d failures. The code is cursed."},
+		"relief":     {"Boo-yah! Green after %d failures.", "The curse lifted after %d failures."},
+		"late_run":   {"%d late nights in a row. We keep the same hours now.", "Night %d running. You are practically a ghost."},
+		"comeback":   {"Back after %d hours. I was starting to fade.", "%d hours away. I got lonely in here."},
+		"busy":       {"%d commands today. Busy haunting.", "%d commands. The living work hard."},
+		"first_push": {"First push of the day. Spooky good.", "Pushed already. Quite the early spirit."},
+	},
+	Recaps: map[string][]string{
+		"quiet":  {"A quiet week. All cobwebs.", "Hardly a whisper this week."},
+		"rough":  {"A rough week, but nothing a good exorcism cannot fix.", "Haunted by failures, yet you kept going."},
+		"steady": {"A steady week. Calm as a graveyard.", "Nothing scary, nothing wasted."},
+		"great":  {"A ghostly good week.", "The living did well this week."},
+	},
 	Unsure: []string{"Did I see something?", "Was that the ghost of an error?"},
 }

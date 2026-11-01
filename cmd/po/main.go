@@ -61,6 +61,12 @@ func main() {
 		case "init":
 			runInit(args[1:])
 			return
+		case "recap":
+			runRecap(args[1:])
+			return
+		case "forget":
+			runForget(args[1:])
+			return
 		case "theme":
 			runTheme(args[1:])
 			return
@@ -218,6 +224,8 @@ const usage = `po: a mood-reactive pet for your terminal
   po overlay on|off   also draw a small text pet in your terminals' corner (off by default)
   po window        show the pet as a small window on your desktop (po window stop to close)
   po window login on|off   start the window automatically at every login
+  po recap         summarise the last 7 days in the pet's voice (po recap --days N)
+  po forget        delete everything Po remembers about your days
   po idle <name>   play an idle animation now (look, stretch, sleep, wake)
   po watch         print the pet's state as it changes (what a window receives)
   po theme list|set <name>   choose the character (soccer, ghost, cat)

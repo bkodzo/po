@@ -37,5 +37,19 @@ var Soccer = Theme{
 		mood.Tired:       {"Is it full time yet?", "Extra time again?", "Subbing myself off."},
 		mood.Calm:        {"Quiet half so far.", "Keeping the shape.", "Nothing to report, gaffer."},
 	},
+	Milestones: map[string][]string{
+		"record":     {"New club record: %d failures in a row. Keep your head up.", "%d in a row. A record, and not the good kind."},
+		"relief":     {"Finally! First green after %d failures.", "%d red cards, then a goal. Nicely done."},
+		"late_run":   {"Night number %d in a row. The pitch is dark, gaffer.", "%d late nights running. Get some rest."},
+		"comeback":   {"Back after %d hours on the bench. Welcome back, gaffer.", "%d hours away. We kept your spot warm."},
+		"busy":       {"%d commands today. Full time is a long way off.", "That is %d commands. A proper shift."},
+		"first_push": {"First push of the day. Kick-off went well.", "Pushed already. Strong start, striker."},
+	},
+	Recaps: map[string][]string{
+		"quiet":  {"A quiet week on the pitch.", "Barely a touch of the ball this week."},
+		"rough":  {"A rough week, but you kept playing.", "Plenty of red cards, and you still turned up."},
+		"steady": {"A steady week. Solid midfield work.", "Nothing flashy, nothing wasted."},
+		"great":  {"A cracking week, striker.", "Top of the table this week."},
+	},
 	Unsure: []string{"Wait, was that offside?", "VAR is checking that one..."},
 }

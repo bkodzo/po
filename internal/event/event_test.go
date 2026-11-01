@@ -93,3 +93,11 @@ func TestToEventCarriesContext(t *testing.T) {
 		t.Errorf("relief not described: %q", relief.Text)
 	}
 }
+
+func TestPrivateMeansLeadingSpaceOrEmpty(t *testing.T) {
+	for text, want := range map[string]bool{" secret": true, "": true, "   ": true, "ls": false, "go test": false} {
+		if got := (Command{Text: text}).Private(); got != want {
+			t.Errorf("Private(%q) = %v, want %v", text, got, want)
+		}
+	}
+}

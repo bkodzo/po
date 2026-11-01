@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"math/rand"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/idle"
 	"github.com/bkodzo/po/internal/ipc"
+	"github.com/bkodzo/po/internal/memory"
 	"github.com/bkodzo/po/internal/mood"
 	"github.com/bkodzo/po/internal/overlay"
 	"github.com/bkodzo/po/internal/pet"
@@ -117,6 +119,13 @@ type Daemon struct {
 
 	overlayOn bool
 
+	// Memory of past days. Only the main loop touches these.
+	mem        *memory.Store
+	memOn      bool
+	memSavedAt time.Time
+	// While a milestone is on show, a reaction does not replace its line.
+	milestoneUntil time.Time
+
 	// Idle life. Only the main loop touches these.
 	sched         *idle.Scheduler
 	lastEvent     time.Time
@@ -141,6 +150,9 @@ func Run(th theme.Theme, p *pet.Pet, st *stack.Stack, l *ipc.Listener) {
 		overlayOn: st.Cfg.Overlay != "off",
 	}
 	now := time.Now()
+	d.mem = memory.Load(memory.DefaultPath())
+	d.memOn = st.Cfg.Memory != "off"
+	d.memSavedAt = now
 	d.lastEvent = now
 	d.sched = idle.New(idleConfig(st.Cfg), rand.New(rand.NewSource(now.UnixNano())), now)
 	d.exportTheme()
@@ -189,6 +201,9 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 	case "idle":
 		d.playActivity(req.Name)
 		return false
+	case "forget":
+		d.forget()
+		return false
 	case "theme":
 		// A window asked for another theme, so remember the choice too.
 		if d.setTheme(req.Name) {
@@ -202,9 +217,13 @@ func (d *Daemon) handle(req ipc.Request) (stop bool) {
 	if req.Cmd != nil {
 		// Any command, even one too dull to react to, means someone is there.
 		d.userActive()
-	}
-	if req.Cmd != nil && !req.Cmd.Ignore() {
-		d.submit(d.eventFor(*req.Cmd))
+		if req.Cmd.Ignore() {
+			d.remember(*req.Cmd, d.failStreak, true)
+		} else {
+			ev := d.eventFor(*req.Cmd)
+			d.submit(ev)
+			d.remember(*req.Cmd, ev.FailStreak, false)
+		}
 	}
 	if req.TTY != "" {
 		d.show(req.TTY)
@@ -290,8 +309,10 @@ func (d *Daemon) worker() {
 		if err == nil {
 			if top, conf := reading.Top(); conf >= d.pet.MinConfidence {
 				d.flash, d.flashUntil = top, time.Now().Add(flashFor)
-				d.line = d.th.Say(top)
-				d.lineSeq++
+				if time.Now().After(d.milestoneUntil) {
+					d.line = d.th.Say(top)
+					d.lineSeq++
+				}
 			}
 			d.pet.Apply(reading)
 		}
@@ -308,6 +329,7 @@ func (d *Daemon) reload() {
 		return
 	}
 	d.overlayOn = cfg.Overlay != "off"
+	d.memOn = cfg.Memory != "off"
 	d.setTheme(cfg.Theme)
 	d.sched.SetConfig(idleConfig(cfg))
 	if cfg.Idle == "off" {
@@ -339,6 +361,51 @@ func (d *Daemon) hide(tty string) {
 		t.Close()
 		delete(d.targets, tty)
 	}
+}
+
+// remember adds a command to the memory and, if it brings about a notable
+// moment, has the pet say so. Private commands are not remembered at all.
+func (d *Daemon) remember(c event.Command, failStreakBefore int, ignored bool) {
+	if !d.memOn || c.Private() {
+		return
+	}
+	now := time.Now()
+	notes := d.mem.Record(now, memory.Observation{
+		Exit:       c.Exit,
+		Hour:       now.Hour(),
+		FailStreak: failStreakBefore,
+		Push:       mood.IsPush(c.Text),
+		Ignored:    ignored,
+	})
+	if len(notes) == 0 {
+		return
+	}
+	line := d.currentTheme().MilestoneLine(notes[0].Kind, notes[0].N)
+	if line == "" {
+		return
+	}
+	d.mu.Lock()
+	d.line = line
+	d.lineSeq++
+	d.milestoneUntil = now.Add(6 * time.Second)
+	d.mu.Unlock()
+}
+
+// saveMemory writes the memory out now and then, not after every command.
+func (d *Daemon) saveMemory(force bool) {
+	if !d.mem.Dirty() || (!force && time.Since(d.memSavedAt) < 5*time.Second) {
+		return
+	}
+	_ = d.mem.Save()
+	d.memSavedAt = time.Now()
+}
+
+// forget wipes the memory, in the file and here.
+func (d *Daemon) forget() {
+	if path := memory.DefaultPath(); path != "" {
+		os.Remove(path)
+	}
+	d.mem = memory.Load(memory.DefaultPath())
 }
 
 // idleConfig turns the settings into the scheduler's.
@@ -409,6 +476,7 @@ func (d *Daemon) idleTick() {
 func (d *Daemon) redraw() {
 	d.tick++
 	d.idleTick()
+	d.saveMemory(false)
 	d.mu.Lock()
 	d.pet.Decay(tickEvery)
 	d.mu.Unlock()
@@ -537,6 +605,7 @@ func (d *Daemon) draw(tty string) {
 }
 
 func (d *Daemon) shutdown() {
+	d.saveMemory(true)
 	d.stack.Close()
 	for sub := range d.subs {
 		close(sub.ch)

@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/bkodzo/po/internal/config"
 	"github.com/bkodzo/po/internal/event"
 	"github.com/bkodzo/po/internal/ipc"
+	"github.com/bkodzo/po/internal/memory"
 	"github.com/bkodzo/po/internal/pet"
 	"github.com/bkodzo/po/internal/stack"
 	"github.com/bkodzo/po/internal/theme"
@@ -346,4 +348,108 @@ func TestAThemeChosenInTheConfigIsPickedUpOnReload(t *testing.T) {
 	}
 	ipc.Send(ipc.Message{Op: "reload"})
 	nextWith(t, sub, "the cat theme", func(s State) bool { return s.Theme == "cat" })
+}
+
+func send(c event.Command) { ipc.Send(ipc.Message{Cmd: &c}) }
+
+// waitForFile waits for the memory file to appear, which happens when Po saves.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	for i := 0; i < 60; i++ {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("%s never appeared", path)
+}
+
+func TestAReliefAfterARoughPatchIsSaidAloud(t *testing.T) {
+	defer startDaemon(t)()
+	sub, _ := ipc.Subscribe()
+	defer sub.Close()
+	readState(t, sub)
+
+	for i := 0; i < 4; i++ {
+		send(event.Command{Text: "go test ./...", Exit: 1})
+		time.Sleep(150 * time.Millisecond)
+	}
+	send(event.Command{Text: "go test ./...", Exit: 0})
+	got := nextWith(t, sub, "a line that mentions the 4 failures", func(s State) bool {
+		return strings.Contains(s.Line, "4")
+	})
+	found := false
+	for _, tmpl := range theme.Soccer.Milestones["relief"] {
+		found = found || strings.Contains(tmpl, "%d") && got.Line == strings.Replace(tmpl, "%d", "4", 1)
+	}
+	if !found {
+		t.Errorf("%q is not one of the relief lines", got.Line)
+	}
+}
+
+func TestMemoryIsSavedWhenPoStopsAndHoldsOnlyCounts(t *testing.T) {
+	stop := startDaemon(t)
+	defer stop()
+	send(event.Command{Text: "go test ./...", Exit: 1})
+	send(event.Command{Text: "git push origin main", Exit: 0})
+	time.Sleep(400 * time.Millisecond)
+	ipc.Send(ipc.Message{Op: "stop"})
+	path := memory.DefaultPath()
+	waitForFile(t, path)
+
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "go test") || strings.Contains(string(data), "git push") {
+		t.Errorf("a command was written to the memory file:\n%s", data)
+	}
+	day := memory.Load(path).Days[time.Now().Format("2006-01-02")]
+	if day == nil || day.Commands != 2 || day.Failures != 1 || day.Pushes != 1 {
+		t.Errorf("remembered %+v, want 2 commands, 1 failure, 1 push", day)
+	}
+}
+
+func TestPrivateCommandsLeaveNoTrace(t *testing.T) {
+	stop := startDaemon(t)
+	defer stop()
+	for i := 0; i < 3; i++ {
+		send(event.Command{Text: " export SECRET=hunter2", Exit: 1}) // a leading space means private
+	}
+	time.Sleep(500 * time.Millisecond)
+	ipc.Send(ipc.Message{Op: "stop"})
+	time.Sleep(800 * time.Millisecond)
+	if _, err := os.Stat(memory.DefaultPath()); err == nil {
+		data, _ := os.ReadFile(memory.DefaultPath())
+		t.Errorf("private commands were remembered:\n%s", data)
+	}
+}
+
+func TestTurningMemoryOffRecordsNothing(t *testing.T) {
+	stop := startDaemon(t)
+	defer stop()
+	cfg, _ := config.Load()
+	cfg.Memory = "off"
+	cfg.Save()
+	ipc.Send(ipc.Message{Op: "reload"})
+	for i := 0; i < 3; i++ {
+		send(event.Command{Text: "make", Exit: 1})
+	}
+	time.Sleep(500 * time.Millisecond)
+	ipc.Send(ipc.Message{Op: "stop"})
+	time.Sleep(800 * time.Millisecond)
+	if _, err := os.Stat(memory.DefaultPath()); err == nil {
+		t.Error("memory was off, but a file was written")
+	}
+}
+
+func TestForgetWipesTheMemory(t *testing.T) {
+	stop := startDaemon(t)
+	defer stop()
+	send(event.Command{Text: "make", Exit: 1})
+	time.Sleep(300 * time.Millisecond)
+	ipc.Send(ipc.Message{Op: "forget"})
+	time.Sleep(300 * time.Millisecond)
+	ipc.Send(ipc.Message{Op: "stop"})
+	time.Sleep(800 * time.Millisecond)
+	if day := memory.Load(memory.DefaultPath()).Days[time.Now().Format("2006-01-02")]; day != nil {
+		t.Errorf("forgotten, but still remembers %+v", day)
+	}
 }

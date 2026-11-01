@@ -33,6 +33,13 @@ func Skip(text string) bool {
 	return len(fields) == 0 || trivial[fields[0]]
 }
 
+// Private reports whether a command was typed with a leading space, which by
+// shell convention means "do not keep this". Po keeps nothing about such a
+// command, not even a count.
+func (c Command) Private() bool {
+	return strings.HasPrefix(c.Text, " ") || strings.TrimSpace(c.Text) == ""
+}
+
 // Ignore reports whether a finished command should be left out. Boring
 // commands are ignored when they succeed, but a failure always counts, and
 // anything typed with a leading space stays private either way.

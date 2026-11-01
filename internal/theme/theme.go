@@ -18,6 +18,11 @@ type Theme struct {
 	Tints  map[mood.Mood]Tint
 	Lines  map[mood.Mood][]string
 	Unsure []string
+	// Milestones are what the pet says for a notable moment, by kind. A line may
+	// hold one %d, which is filled with the number the moment is about.
+	Milestones map[string][]string
+	// Recaps are one-line verdicts on a week, by tone: quiet, rough, steady, great.
+	Recaps map[string][]string
 }
 
 // Tint moves the body colour part of the way toward a colour. Colours far from

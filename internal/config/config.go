@@ -42,6 +42,9 @@ type Config struct {
 	Idle string
 	// SleepMinutes is how long with no commands before the pet falls asleep.
 	SleepMinutes int
+	// Memory is "on" to remember daily counts (never commands) for milestones and
+	// the recap, or "off" to keep nothing.
+	Memory string
 }
 
 func Default() Config {
@@ -56,6 +59,7 @@ func Default() Config {
 		Overlay:      "off",
 		Idle:         "on",
 		SleepMinutes: 10,
+		Memory:       "on",
 	}
 }
 
@@ -108,7 +112,7 @@ var readers = map[string]bool{"auto": true, "rules": true, "keyword": true, "dec
 
 // Keys lists every setting name.
 func Keys() []string {
-	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme", "overlay", "idle", "sleep_minutes"}
+	k := []string{"reader", "url", "model", "key_env", "key_file", "local_model", "gate", "idle_minutes", "theme", "overlay", "idle", "sleep_minutes", "memory"}
 	sort.Strings(k)
 	return k
 }
@@ -149,6 +153,11 @@ func (c *Config) Set(key, value string) error {
 			return fmt.Errorf("idle must be on or off, not %q", value)
 		}
 		c.Idle = value
+	case "memory":
+		if value != "on" && value != "off" {
+			return fmt.Errorf("memory must be on or off, not %q", value)
+		}
+		c.Memory = value
 	case "sleep_minutes":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 1 {
@@ -192,6 +201,8 @@ func (c Config) Get(key string) (string, error) {
 		return c.Idle, nil
 	case "sleep_minutes":
 		return strconv.Itoa(c.SleepMinutes), nil
+	case "memory":
+		return c.Memory, nil
 	}
 	return "", fmt.Errorf("unknown setting %q (known: %s)", key, strings.Join(Keys(), ", "))
 }

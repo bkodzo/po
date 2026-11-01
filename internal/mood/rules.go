@@ -86,6 +86,12 @@ func classify(cmd string) cmdKind {
 	return kindOther
 }
 
+// IsPush reports whether a command publishes work: a push, merge, tag or deploy.
+func IsPush(cmd string) bool {
+	k := classify(cmd)
+	return k == kindPush || k == kindDeploy
+}
+
 func (Rules) Read(e Event) (Reading, error) {
 	if e.Kind != "command" {
 		return Keyword{}.Read(e)
